@@ -114,33 +114,61 @@ def webhook():
 
     update_memory(phone, "user", user_in)
     
-    # 2. TRIGGER LOGIC FIX (Lowercase check)
+    # 2. TRIGGER LOGIC
     triggers = ["ses", "konuş", "duymak", "söyle", "anlat", "dinle", "özetle", "sesli"]
-    should_speak = is_voice_in or any(w in user_input.lower() for w in triggers) for user_input in [user_in] # Fix scope
-    # Actually simpler:
     should_speak = is_voice_in or any(w in user_in.lower() for w in triggers)
+
+    KNOWLEDGE_BASE_FILE = os.path.join(BASE_DIR, "knowledge_base.json")
+    
+    def load_kb():
+        try:
+            with open(KNOWLEDGE_BASE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
 
     sys_prompt = f"""
     Sen Aura, Akropol Termal Asistanı.
     {'CEVABIN SESLİ OKUNACAK.' if should_speak else ''}
     Kısa, net, samimi ol.
-    Bilgi: {json.dumps(load_json(KNOWLEDGE_BASE_FILE), ensure_ascii=False)}
+    Bilgi: {json.dumps(load_kb(), ensure_ascii=False)}
     """
     
     hist = CONVERSATIONS.get(phone, {}).get("messages", [])
-    try: ai_reply = client.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":sys_prompt}]+[{"role":m["role"],"content":m["content"]} for m in hist[-5:]]).choices[0].message.content
-    except: ai_reply = "Sistem meşgul."
+    try: 
+        messages = [{"role":"system","content":sys_prompt}] + [{"role":m["role"],"content":m["content"]} for m in hist[-5:]]
+        # Fix: ensure role is user/assistant/system
+        ai_reply = client.chat.completions.create(model="gpt-4o", messages=messages).choices[0].message.content
+    except Exception as e: 
+        print(f"OpenAI Error: {e}")
+        ai_reply = "Sistem şu an yanıt veremiyor."
 
     update_memory(phone, "assistant", ai_reply)
 
     resp = MessagingResponse()
+    
     if should_speak:
-        audio_url = get_tts_url(ai_reply) # Will force HTTPS
-        if audio_url:
+         # Generate TTS
+        try:
+            fname = f"out_{int(time.time())}.mp3"
+            path = os.path.join(AUDIO_DIR, fname)
+            
+            # OpenAI TTS
+            res = client.audio.speech.create(model="tts-1", voice="shimmer", input=ai_reply)
+            res.stream_to_file(path)
+            
+            # Public URL for Twilio
+            # Note: _external=True needs REQUEST_CONTEXT or explicit host config in Flask
+            # For Render/Production, we might need a fixed URL base if url_for doesn't work correctly behind proxy
+            # But url_for usually works if configured. 
+            # Safe bet: force HTTPS if scheme is missing or http
+            audio_url = url_for('static', filename=f'audio/{fname}', _external=True, _scheme='https')
+            
             msg = resp.message(ai_reply)
             msg.media(audio_url)
-        else:
-            resp.message(ai_reply + " (Ses dosyası gönderilemedi)")
+        except Exception as e:
+            print(f"TTS Error: {e}")
+            resp.message(ai_reply + " (Ses gönderilemedi)")
     else:
         resp.message(ai_reply)
         
