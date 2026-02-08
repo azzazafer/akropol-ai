@@ -304,13 +304,16 @@ def update_memory(phone, role, content, meta_update=None, audio_url=None):
     save_conversations()
 
 # --- ROUTES & API ---
-# 1. /dashboard -> CRM PANEL (Restored)
+# 1. /dashboard -> CRM PANEL (Now Secured)
 @app.route("/dashboard")
 def dsh():
+    if not session.get("admin"): return redirect("/login")
+    
     stats = {"total": len(CONVERSATIONS), "hot": 0, "follow": 0}
     for k,v in CONVERSATIONS.items():
-        if v["metadata"].get("status")=="HOT": stats["hot"]+=1
-        elif v["metadata"].get("status")=="WARM": stats["follow"]+=1
+        st = v.get("metadata", {}).get("status", "NEW" if v["messages"] else "EMPTY")
+        if st=="HOT": stats["hot"]+=1
+        elif st=="WARM": stats["follow"]+=1
     return render_template("dashboard.html", memory=CONVERSATIONS, stats=stats)
 
 # 2. Redirect root to dashboard (Sales user landing)
@@ -339,11 +342,15 @@ def logout():
     session.pop("admin", None)
     return redirect("/login")
 
-# --- API ---
+# --- API (All Secured) ---
 @app.route("/api/conversations")
 def api_conversations():
     if not session.get("admin"): return jsonify({"error": "Unauthorized"}), 401
-    return jsonify(CONVERSATIONS)
+    # Sort for UI stability
+    try:
+        sorted_conv = {k: v for k, v in sorted(CONVERSATIONS.items(), key=lambda item: item[1]['messages'][-1]['timestamp'] if item[1]['messages'] else 0, reverse=True)}
+        return jsonify(sorted_conv)
+    except: return jsonify(CONVERSATIONS)
 
 @app.route("/api/messages")
 def api_messages():
