@@ -491,7 +491,11 @@ def logout():
 @app.route("/super-admin")
 def admin_panel():
     if not session.get("admin"): return redirect("/login")
-    return render_template("super_admin.html") # Tüm veri API ile gelecek
+    return render_template("super_admin.html")
+
+@app.route("/dashboard")
+def dsh_redirect():
+    return redirect("/super-admin")
 
 # --- JSON API ROUTES ---
 @app.route("/api/conversations")
