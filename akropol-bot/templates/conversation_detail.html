@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Konuşma Detayı - Akropol AI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+
+        .chat-box {
+            height: 500px;
+            overflow-y: auto;
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 10px;
+            max-width: 70%;
+            position: relative;
+        }
+
+        .message.user {
+            background-color: #dcf8c6;
+            margin-left: auto;
+            border-bottom-right-radius: 0;
+        }
+
+        .message.assistant {
+            background-color: #f1f0f0;
+            margin-right: auto;
+            border-bottom-left-radius: 0;
+        }
+
+        .timestamp {
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 5px;
+            display: block;
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/dashboard"><i class="fas fa-arrow-left me-2"></i>Geri Dön</a>
+            <span class="text-white">Müşteri Detayı: {{ phone }}</span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row">
+            <!-- Sol: Sohbet Geçmişi -->
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-header bg-white"><i class="fas fa-comments me-2"></i>Konuşma Geçmişi</div>
+                    <div class="card-body chat-box" id="chatContainer">
+                        {% for msg in messages %}
+                        <div class="message {{ msg.role }}">
+                            <strong>{{ 'Müşteri' if msg.role == 'user' else 'Asistan' }}</strong> <br>
+                            {{ msg.content }}
+                            <span class="timestamp">{{ logic.format_time(msg.timestamp) }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sağ: Yapay Zeka Analizi -->
+            <div class="col-md-4">
+                <div class="card bg-warning text-dark mb-3">
+                    <div class="card-header"><i class="fas fa-lightbulb me-2"></i>Anlık Analiz</div>
+                    <div class="card-body">
+                        <p class="card-text">Bu alan AI tarafından dinamik olarak güncellenir.</p>
+                        <!-- İleride buraya daha detaylı analizler eklenebilir -->
+                    </div>
+                </div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success"><i class="fab fa-whatsapp me-2"></i>WhatsApp'tan Yaz</button>
+                    <button class="btn btn-danger"><i class="fas fa-ban me-2"></i>Engelle</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sayfa açıldığında en alta kaydır
+        var chatContainer = document.getElementById("chatContainer");
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    </script>
+</body>
+
+</html>

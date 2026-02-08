@@ -1,0 +1,63 @@
+{
+  "whatsapp:+905010066718": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "MERHABALAR",
+        "timestamp": 1770408367.4024696
+      },
+      {
+        "role": "assistant",
+        "content": "Merhaba ve hoş geldiniz! Ben Akropol Termal Asistanınızım. Size nasıl yardımcı olabilirim?",
+        "timestamp": 1770408367.4059658
+      },
+      {
+        "role": "user",
+        "content": "Merhaba, ilk önce seni yakından tanımak istiyorum. Bana kendini sesli bir şekilde tanıtır mısın?",
+        "timestamp": 1770408405.1192255
+      },
+      {
+        "role": "assistant",
+        "content": "Merhaba! Ben Akropol Termal Asistanınızım. Buradayım ve size yardımcı olmaktan mutluluk duyarım. Afyonkarahisar'daki Akropol Termal Şehir hakkında bilgi vermek, rezervasyonlar ve hizmetler konusunda sorularınızı yanıtlamak için buradayım. Size nasıl yardımcı olabilirim?",
+        "timestamp": 1770408405.1202114
+      },
+      {
+        "role": "user",
+        "content": "OTELİNİZ VE FİYATLAR HAKKINDA BİLGİ LABİLİRMİYİM",
+        "timestamp": 1770408863.0163176
+      },
+      {
+        "role": "assistant",
+        "content": "Elbette! Akropol Termal Şehir, Afyonkarahisar merkezde, AVM ve istasyona yakın bir konumda yer alan alkolsüz bir aile otelidir. Otelimizde bay/bayan ayrı termal havuzlar, karışık açık havuz ve çocuk havuzları bulunuyor. Ayrıca, tüm odalarda termal su yoktur, ancak jakuzi yalnızca Suite odalarda bulunmaktadır. Yemek konseptimiz yarım pansiyondur; sabah kahvaltısı ve akşam yemeği açık büfe şeklinde sunulmaktadır, öğle yemeği ise ekstra ücretlidir.\n\nFiyatlarımıza gelecek olursak, sezona göre değişiklik gösterebiliyor. Gecelik fiyatlarımız 2000 TL'den başlamaktadır, ancak daha kesin fiyatlar için satış temsilcimize yönlendirmemiz gerekecek. \n\nBaşka nasıl yardımcı olabilirim? Belirli bir tarihte mi gelmeyi düşünüyorsunuz?",
+        "timestamp": 1770408863.0173106
+      },
+      {
+        "role": "user",
+        "content": "FİYATLARDA YARDIMCI OLURSANIZ 1 HAFTA SONRASI İÇİN 2 YETİŞKİN 1 ÇOCUK REVEZVASYON YAPTIRACAĞIM",
+        "timestamp": 1770408927.1465771
+      },
+      {
+        "role": "assistant",
+        "content": "Bir hafta sonrası, yani 13 Şubat için iki yetişkin ve bir çocuk konaklaması için fiyatlarımız sezona göre değişiklik gösterdiği için tam bir rakam verememekteyim. Ancak fiyatlarımız gecelik 2000 TL'den başlamaktadır. Daha kesin bilgi ve rezervasyon yapmak için sizi satış temsilcimizle görüştürebiliriz. \n\nSize başka nasıl yardımcı olabilirim? Başka bir sorunuz var mı?",
+        "timestamp": 1770408927.1475742
+      },
+      {
+        "role": "user",
+        "content": "AHH UNUTMUŞTUM O TARİHTE BİR HASTANE RANDEVUM VAR HASTANE RANDEVUMDAN SONRA TEKRA ARAMISINIZ",
+        "timestamp": 1770409002.5713003
+      },
+      {
+        "role": "assistant",
+        "content": "Elbette, öncelikle sağlık her şeyden önce gelir. Hastane randevunuzun iyi geçmesini dilerim. Ben notumu alıyorum, randevunuz sonrasında size tekrar ulaşalım. Başka bir konuda size yardımcı olabilir miyim?",
+        "timestamp": 1770409002.5723345
+      }
+    ],
+    "metadata": {
+      "summary": "Müşteri otelin fiyatları ve rezervasyonu ile ilgileniyor fakat daha sonra tekrar aranmasını talep ediyor.",
+      "status": "WARM",
+      "follow_up_date": "2026-02-13 23:16",
+      "customer_intent": "Fiyat sorma",
+      "sentiment": "Positive"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+flask
+twilio
+openai
+python-dotenv
+apscheduler
+dateparser
+requests
+gunicorn

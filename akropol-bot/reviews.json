@@ -1,0 +1,26 @@
+[
+    {
+        "user": "Ahmet Y.",
+        "rating": 5,
+        "comment": "Termal havuzları ve aile banyoları çok temiz. Çocuklar için aquapark olması harika, tüm gün eğlendiler.",
+        "source": "Google Haritalar"
+    },
+    {
+        "user": "Elif K.",
+        "rating": 4,
+        "comment": "Yemekler açık büfe ve çeşit boldu. Odalar geniş ve ferah, kışın gitmemize rağmen sıcaklık sorunu yaşamadık.",
+        "source": "Otel Puan"
+    },
+    {
+        "user": "Mehmet T.",
+        "rating": 5,
+        "comment": "Personel çok ilgiliydi. Özellikle SPA bölümündeki masaj hizmetinden çok memnun kaldım. Tam bir dinlenme yeri.",
+        "source": "TripAdvisor"
+    },
+    {
+        "user": "Ayşe S.",
+        "rating": 4,
+        "comment": "Ankara'ya yakın olması büyük avantaj. Hafta sonu kaçamağı için ideal. Doğası ve havası çok güzel.",
+        "source": "Google Haritalar"
+    }
+]

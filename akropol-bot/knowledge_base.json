@@ -1,0 +1,30 @@
+{
+    "hotel_info": {
+        "name": "Akropol Termal Şehir",
+        "location": "Beypazarı, Ankara (Ayvaşık Mah. Karapınar Mevkii).",
+        "concept": "Türkiye ve Avrupa'nın en büyük termal şehir projesi. Alkolsüz aile konsepti.",
+        "facilities": [
+            "Bay/Bayan ayrı termal havuzlar",
+            "Karma açık havuz ve Aquapark",
+            "VIP Aile banyoları ve Türk Hamamı",
+            "Fitness salonu, SPA ve Masaj odaları",
+            "Futbol, voleybol, basketbol sahaları",
+            "Mini hayvanat bahçesi ve oyun alanları",
+            "Alışveriş merkezi ve sinema salonları"
+        ],
+        "accommodation": "1+1, 2+1 ve 3+1 daire seçenekleri. Odalarda mutfak, termal su imkanı ve balkon bulunur.",
+        "dining": "Yarım Pansiyon (Sabah Kahvaltısı + Akşam Yemeği Açık Büfe).",
+        "check_in_out": "Giriş: 14:00, Çıkış: 11:00",
+        "contact": {
+            "phone": "+90 312 770 0333",
+            "whatsapp": "0531 105 2373"
+        }
+    },
+    "rules": [
+        "ASLA uydurma yapma (Hallucination yok).",
+        "Fiyat sorulursa: 'Fiyatlarımız sezon ve oda tipine göre değişiyor, güncel kampanyalarımız için satış temsilcimiz sizi arayabilir. Siz hangi tarihlerde düşünüyorsunuz?' de.",
+        "Konum sorulursa: 'Ankara Beypazarı'ndayız, Ayvaşık Mahallesi'nde.' de.",
+        "'Cenaze', 'Hasta' gibi kelimeler geçerse EMPATİ yap (Örn: 'Başınız sağ olsun'), satışı ertele.",
+        "Samimi (abi/abla) konuşana samimi, resmi konuşana resmi cevap ver."
+    ]
+}
