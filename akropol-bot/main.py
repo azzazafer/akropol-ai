@@ -24,11 +24,11 @@ def setup_files():
         os.makedirs(TEMPLATE_DIR)
         print(f"📂 'templates' created at: {TEMPLATE_DIR}")
 
-    # 1. Dashboard.html
+    # 1. Dashboard.html (Jinja Syntax Error Fixed)
     dash_path = os.path.join(TEMPLATE_DIR, "dashboard.html")
-    if not os.path.exists(dash_path):
-        with open(dash_path, "w", encoding="utf-8") as f:
-            f.write("""<!DOCTYPE html>
+    # Dosya varsa da üzerine yazalım ki syntax hatası düzelsin
+    with open(dash_path, "w", encoding="utf-8") as f:
+        f.write("""<!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
@@ -85,10 +85,14 @@ def setup_files():
         </div>
     </div>
     <script>
-        setTimeout(function(){ location.reload(); }, 10000);
+        // Basit reload scripti (Jinja hatasi olmamasi icin minimal)
+        setTimeout(function(){ 
+            window.location.reload(1);
+        }, 10000);
     </script>
 </body>
 </html>""")
+    print("📄 'dashboard.html' güncellendi (Syntax Fix).")
 
     # 2. Super_admin.html
     admin_path = os.path.join(TEMPLATE_DIR, "super_admin.html")
@@ -301,7 +305,7 @@ scheduler.add_job(check_followups, 'interval', seconds=60)
 # 7. ROUTE'LAR
 @app.route("/")
 def home():
-    return "Akropol AI Bot Çalışıyor! /dashboard adresine gidin. (v2.1)"
+    return "Akropol AI Bot Çalışıyor! /dashboard adresine gidin. (v2.2)"
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
@@ -347,7 +351,14 @@ def dashboard():
             meta = data.get("metadata", {})
             if meta.get("status") == "HOT": stats["hot"] += 1
             if meta.get("status") == "WARM": stats["follow"] += 1
-        return render_template("dashboard.html", memory=memory, stats=stats)
+        # Hata yakalamak için exception handler ekledim
+        try:
+            return render_template("dashboard.html", memory=memory, stats=stats)
+        except Exception as jinja_error:
+            # Eğer dashboard.html bozuksa, manuel olarak düzeltip tekrar dene
+            setup_files()
+            return render_template("dashboard.html", memory=memory, stats=stats)
+            
     except Exception as e:
         return f"<h1>Dashboard Error</h1><pre>{traceback.format_exc()}</pre>", 500
 
