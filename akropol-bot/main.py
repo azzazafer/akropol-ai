@@ -11,17 +11,23 @@ from twilio.rest import Client
 from openai import OpenAI
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
+import traceback
 
-# --- OTOMATİK KURULUM (SIRF SENİN İÇİN) ---
+# --- CONFIG & PATHS ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+# --- AUTO SETUP ---
 def setup_files():
-    """Eksik klasör ve dosyaları otomatik yaratır."""
-    if not os.path.exists("templates"):
-        os.makedirs("templates")
-        print("📂 'templates' klasörü oluşturuldu.")
+    if not os.path.exists(TEMPLATE_DIR):
+        os.makedirs(TEMPLATE_DIR)
+        print(f"📂 'templates' created at: {TEMPLATE_DIR}")
 
     # 1. Dashboard.html
-    if not os.path.exists("templates/dashboard.html"):
-        with open("templates/dashboard.html", "w", encoding="utf-8") as f:
+    dash_path = os.path.join(TEMPLATE_DIR, "dashboard.html")
+    if not os.path.exists(dash_path):
+        with open(dash_path, "w", encoding="utf-8") as f:
             f.write("""<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -83,48 +89,45 @@ def setup_files():
     </script>
 </body>
 </html>""")
-        print("📄 'dashboard.html' oluşturuldu.")
 
     # 2. Super_admin.html
-    if not os.path.exists("templates/super_admin.html"):
-        with open("templates/super_admin.html", "w", encoding="utf-8") as f:
+    admin_path = os.path.join(TEMPLATE_DIR, "super_admin.html")
+    if not os.path.exists(admin_path):
+        with open(admin_path, "w", encoding="utf-8") as f:
             f.write("""<!DOCTYPE html>
 <html lang="tr">
 <head><title>Süper Admin</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
 <body class="bg-dark text-white">
 <div class="container mt-5"><h1>Süper Admin Paneli</h1><p>Burası sadece yetkililer içindir.</p><a href="/dashboard" class="btn btn-light">Geri Dön</a></div>
 </body></html>""")
-        print("📄 'super_admin.html' oluşturuldu.")
 
     # 3. Conversation Detail
-    if not os.path.exists("templates/conversation_detail.html"):
-        with open("templates/conversation_detail.html", "w", encoding="utf-8") as f:
+    detail_path = os.path.join(TEMPLATE_DIR, "conversation_detail.html")
+    if not os.path.exists(detail_path):
+        with open(detail_path, "w", encoding="utf-8") as f:
             f.write("""<!DOCTYPE html>
 <html lang="tr">
 <head><title>Detay</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
 <body><div class="container mt-5"><h1>Konuşma Detayı: {{ phone }}</h1>
 {% for msg in messages %}<div class="alert alert-secondary"><b>{{ msg.role }}:</b> {{ msg.content }}</div>{% endfor %}
 <a href="/dashboard" class="btn btn-primary">Geri</a></div></body></html>""")
-        print("📄 'conversation_detail.html' oluşturuldu.")
 
-# OTOMATİK KURULUMU ÇALIŞTIR
 setup_files()
 
-# --- STANDART KODLAR ---
+# --- FLASK SETUP ---
 load_dotenv()
-app = Flask(__name__)
+app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 
-# API Keyler
+# --- KEYS ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
-# İstemciler
 if OPENAI_API_KEY:
     client = OpenAI(api_key=OPENAI_API_KEY)
 else:
-    print("⚠️ UYARI: OPENAI_API_KEY eksik!")
+    print("⚠️ API Key Missing")
     client = None
 
 try:
@@ -135,13 +138,15 @@ except:
 scheduler = BackgroundScheduler()
 scheduler.start()
 
-# Sabitler
-MEMORY_FILE = "conversations.json"
-KNOWLEDGE_BASE_FILE = "knowledge_base.json"
-REVIEWS_FILE = "reviews.json"
-SETTINGS_FILE = "settings.json"
-AUDIO_DIR = "static/audio"
-os.makedirs(AUDIO_DIR, exist_ok=True)
+# --- FILES ---
+MEMORY_FILE = os.path.join(BASE_DIR, "conversations.json")
+KNOWLEDGE_BASE_FILE = os.path.join(BASE_DIR, "knowledge_base.json")
+REVIEWS_FILE = os.path.join(BASE_DIR, "reviews.json")
+SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
+AUDIO_DIR = os.path.join(STATIC_DIR, "audio")
+
+if not os.path.exists(AUDIO_DIR):
+    os.makedirs(AUDIO_DIR, exist_ok=True)
 
 # 2. YARDIMCI VE VERİ FONKSİYONLARI
 def load_json_file(filepath, default):
@@ -296,7 +301,7 @@ scheduler.add_job(check_followups, 'interval', seconds=60)
 # 7. ROUTE'LAR
 @app.route("/")
 def home():
-    return "Akropol AI Bot Çalışıyor! /dashboard adresine gidin."
+    return "Akropol AI Bot Çalışıyor! /dashboard adresine gidin. (v2.1)"
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
@@ -305,7 +310,7 @@ def webhook():
     incoming_msg = request.values.get('Body', '').strip()
     from_number = request.values.get('From', '')
     
-    # Basit bir cevap (replit test için)
+    # Basit bir cevap
     history = get_conversation_history(from_number)
     
     system_prompt = f"""
@@ -335,19 +340,25 @@ def webhook():
 
 @app.route("/dashboard")
 def dashboard():
-    memory = load_memory()
-    stats = {"total": len(memory), "hot": 0, "follow": 0}
-    for p, data in memory.items():
-        meta = data.get("metadata", {})
-        if meta.get("status") == "HOT": stats["hot"] += 1
-        if meta.get("status") == "WARM": stats["follow"] += 1
-    return render_template("dashboard.html", memory=memory, stats=stats, analyzer=analyzer)
+    try:
+        memory = load_memory()
+        stats = {"total": len(memory), "hot": 0, "follow": 0}
+        for p, data in memory.items():
+            meta = data.get("metadata", {})
+            if meta.get("status") == "HOT": stats["hot"] += 1
+            if meta.get("status") == "WARM": stats["follow"] += 1
+        return render_template("dashboard.html", memory=memory, stats=stats)
+    except Exception as e:
+        return f"<h1>Dashboard Error</h1><pre>{traceback.format_exc()}</pre>", 500
 
 @app.route("/dashboard/<path:phone>")
 def detail(phone):
-    memory = load_memory()
-    data = memory.get(phone, {})
-    return render_template("conversation_detail.html", phone=phone, messages=data.get("messages", []), logic=analyzer)
+    try:
+        memory = load_memory()
+        data = memory.get(phone, {})
+        return render_template("conversation_detail.html", phone=phone, messages=data.get("messages", []), logic=analyzer)
+    except Exception as e:
+        return f"Hata: {str(e)}", 500
 
 @app.route("/super-admin")
 @requires_auth
