@@ -111,7 +111,14 @@ def setup_files():
                 <span class="badge bg-success ms-2">Online</span>
             </div>
             <div class="msg-box" id="msgBox">
-                {% for msg in conversations.get(selected_phone, {}).get('messages', []) %}
+                {# Try direct access first, then safe get #}
+                {% set msgs = conversations.get(selected_phone, {}).get('messages', []) %}
+                {% if not msgs and '+' in selected_phone %}
+                     {# Handle URL decoded/encoded mismatch #}
+                     {% set msgs = conversations.get(selected_phone.replace(' ', '+'), {}).get('messages', []) %}
+                {% endif %}
+                
+                {% for msg in msgs %}
                 <div class="msg {{ msg.role }}">
                     {% if msg.role == 'assistant' and msg.get('audio_url') %}
                         <div>{{ msg.content }}</div>
