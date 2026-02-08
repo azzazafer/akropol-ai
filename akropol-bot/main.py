@@ -301,7 +301,7 @@ def webhook():
 
 # --- ROUTES ---
 @app.route("/")
-def idx(): return "Akropol v7.2 Active"
+def idx(): return redirect("/dashboard")
 
 # AUTH
 @app.route("/login", methods=["GET", "POST"])
