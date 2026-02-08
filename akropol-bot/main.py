@@ -257,6 +257,15 @@ def webhook():
     # TRIGGER LOGIC
     triggers = ["ses", "konuş", "duymak", "söyle", "anlat", "dinle", "özetle", "sesli"]
     should_speak = is_voice_in or any(w in user_in.lower() for w in triggers)
+    
+    # KNOWLEDGE BASE LOAD
+    def load_kb():
+        try:
+            with open(CONVERSATIONS_FILE.replace("conversations.json", "knowledge_base.json"), "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"KB Error: {e}") 
+            return {}
 
     KB = load_kb()
     
