@@ -48,7 +48,9 @@ def setup_files():
         f.write("""<!DOCTYPE html><html lang="tr"><head><title>Detay</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background:#f8f9fa;font-family:'Segoe UI',sans-serif}.timeline{position:relative;padding:20px 0}.timeline::before{content:'';position:absolute;left:50px;top:0;bottom:0;width:2px;background:#e9ecef}.msg-card{margin-bottom:20px;border:none;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.05);margin-left:80px;position:relative}.msg-card::before{content:'';position:absolute;left:-41px;top:20px;width:12px;height:12px;border-radius:50%;background:#ccc;border:2px solid white;z-index:2}.role-user .msg-card::before{background:#3498db}.role-assistant .msg-card::before{background:#e67e22}.role-user .msg-card{background:white;border-left:4px solid #3498db}.role-assistant .msg-card{background:#fff8e1;border-left:4px solid #e67e22}.timestamp{position:absolute;left:-80px;top:15px;font-size:0.75rem;color:#999;width:60px;text-align:right}.voice-tag{font-size:0.8rem;background:#eee;padding:2px 8px;border-radius:4px;display:inline-block;margin-bottom:5px}</style></head><body><div class="container py-5" style="max-width:800px;"><div class="d-flex justify-content-between align-items-center mb-5"><h4 class="mb-0 fw-bold">{{ phone }}</h4><a href="/dashboard" class="btn btn-outline-secondary btn-sm">Panele Dön</a></div><div class="timeline">{% for msg in messages %}<div class="position-relative role-{{ msg.role }}"><div class="timestamp">{{ msg.time_str }}</div><div class="card msg-card p-3">{% if "[SESLİ" in msg.content %}<div class="voice-tag">🎤 Ses Kaydı</div>{% endif %}<div class="text-dark">{{ msg.content }}</div></div></div>{% endfor %}</div></div></body></html>""")
 
     # 3. Admin
-    with open(os.path.join(TEMPLATE_DIR, "super_admin.html"), "w", encoding="utf-8") as f: f.write("<html><body>Admin</body></html>")
+    admin_path = os.path.join(TEMPLATE_DIR, "super_admin.html")
+    with open(admin_path, "w", encoding="utf-8") as f:
+        f.write("""<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Super Admin - Aura OS</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>body{background:#f8f9fa;font-family:'Segoe UI',sans-serif}.card{border:none;box-shadow:0 4px 15px rgba(0,0,0,0.05);border-radius:10px}.navbar{background:#2c3e50!important}</style></head><body><nav class="navbar navbar-dark mb-4"><div class="container"><a class="navbar-brand" href="#"><i class="fas fa-shield-alt me-2"></i>Super Admin</a><a href="/dashboard" class="btn btn-outline-light btn-sm">Panele Dön</a></div></nav><div class="container"><div class="row"><div class="col-md-12"><div class="card p-4"><h3><i class="fas fa-tools text-primary me-2"></i>Sistem Yönetimi</h3><div class="alert alert-info mt-3">Yönetici paneli yapım aşamasındadır. Sistem ayarları ve loglar buradan yönetilecek.</div><div class="row g-3 mt-2"><div class="col-md-4"><div class="p-3 border rounded bg-light"><h6><i class="fas fa-server me-2"></i>Sunucu Durumu</h6><span class="badge bg-success">Aktif</span></div></div><div class="col-md-4"><div class="p-3 border rounded bg-light"><h6><i class="fab fa-whatsapp me-2"></i>Webhook</h6><span class="badge bg-success">Bağlı</span></div></div></div></div></div></div></div></body></html>""")
 
 setup_files()
 
@@ -176,6 +178,10 @@ def webhook():
     return str(resp)
 
 # --- ROUTES ---
+@app.route("/super-admin")
+def admin_panel():
+    return render_template("super_admin.html")
+
 @app.route("/")
 def idx(): return "Akropol v7.1 Active"
 
