@@ -258,26 +258,49 @@ def webhook():
     triggers = ["ses", "konuş", "duymak", "söyle", "anlat", "dinle", "özetle", "sesli"]
     should_speak = is_voice_in or any(w in user_in.lower() for w in triggers)
 
-    KNOWLEDGE_BASE_FILE = os.path.join(BASE_DIR, "knowledge_base.json")
-    def load_kb():
-        try:
-            with open(KNOWLEDGE_BASE_FILE, "r", encoding="utf-8") as f: return json.load(f)
-        except: return {}
-
-    sys_prompt = f"""
-    Sen Aura, Akropol Termal Asistanı.
-    {'CEVABIN SESLİ OKUNACAK.' if should_speak else ''}
-    Kısa, net, samimi ol.
-    Bilgi: {json.dumps(load_kb(), ensure_ascii=False)}
+    KB = load_kb()
+    
+    # 3. SALES PSYCHOLOGY & PERSONA GENERATION
+    # Bu adımlar botun "robotik" olmasını engeller, empatik ve satış odaklı yapar.
+    persona_prompt = f"""
+    Sen {KB.get('identity', {}).get('name', 'Aura')}; {KB.get('identity', {}).get('tone', 'Sıcak ve profesyonel')} bir {KB.get('identity', {}).get('role', 'Asistan')}.
+    GÖREVİN: {KB.get('identity', {}).get('mission', 'Mükemmel tatil deneyimi sunmak')}.
+    
+    BİLGİ BANKASI:
+    {json.dumps(KB.get('hotel_info', {}), ensure_ascii=False)}
+    
+    SATIŞ PSİKOLOJİSİ KURALLARI (BUNLARI UYGULA):
+    1. EMPATİ KUR: Kullanıcının duygusunu veya ihtiyacını anla. (Örn: "Yorgunluğunuzu atmanız için harika bir fırsat...", "Ailenizle keyifli vakit geçirmeniz bizim için önemli...")
+    2. DEĞER KAT: Sadece "Evet var" deme. O özelliğin kullanıcıya faydasını anlat. (Örn: "Evet havuzumuz var" YERİNE "Termal havuzlarımızda günün yorgunluğunu atarken şifalı sularımızın keyfini sürebilirsiniz.")
+    3. YÖNLENDİR: Konuşmayı asla cevapsız bırakma. Her zaman bir sonraki adıma (tarih sorma, kişi sayısı öğrenme, arama teklifi) yönlendiren nazik bir soru sor.
+    4. FİYAT TAKTİĞİ: {KB.get('sales_psychology', {}).get('handling_price', 'Fiyat sormadan önce değeri hissettir.')}
+    
+    FORMAT:
+    - Kısa paragraflar kullan.
+    - Samimi ol ama labali olma. "Siz" dilini koru ama sıcak olsun.
+    - Emoji kullanımı: Ölçülü ve yerinde (Örn: 🌿, ✨, 💧)
+    {'CEVABIN SESLİ OKUNACAK. Lütfen noktalama işaretlerini dikkatli kullan ve akıcı cümleler kur.' if should_speak else ''}
     """
     
+    # 4. CONTEXT MANAGEMENT (Smart History)
+    # Son 8 mesajı alarak konuşmanın akışını daha iyi anla
     hist = CONVERSATIONS.get(phone, {}).get("messages", [])
+    
     try: 
-        messages = [{"role":"system","content":sys_prompt}] + [{"role":m["role"],"content":m["content"]} for m in hist[-5:]]
-        ai_reply = client.chat.completions.create(model="gpt-4o", messages=messages).choices[0].message.content
+        messages = [{"role":"system", "content": persona_prompt}] + [{"role":m["role"], "content":m["content"]} for m in hist[-8:]]
+        
+        # Call OpenAI with higher temperature for creativity but controlled top_p
+        completion = client.chat.completions.create(
+            model="gpt-4o", 
+            messages=messages,
+            temperature=0.7, # Biraz daha yaratıcı olsun
+            presence_penalty=0.3, # Tekrara düşmesin
+            frequency_penalty=0.3
+        )
+        ai_reply = completion.choices[0].message.content
     except Exception as e: 
         print(f"OpenAI Error: {e}")
-        ai_reply = "Sistem şu an yanıt veremiyor."
+        ai_reply = "Şu an sistemlerimizde kısa bir bakım var, ancak size yardımcı olmayı çok isterim. Lütfen biraz sonra tekrar yazar mısınız? 🌸"
 
     update_memory(phone, "assistant", ai_reply)
 
