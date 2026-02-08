@@ -94,7 +94,7 @@ def setup_files():
                 <h5 class="mb-0">Görüşmeler</h5>
                 <a href="/dashboard" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left"></i> CRM</a>
             </div>
-            {% for phone, data in conversations.items()|sort(attribute='1.messages.-1.timestamp', reverse=True) %}
+            {% for phone, data in conversations.items() %}
             <a href="/super-admin?phone={{ phone }}" class="d-block text-decoration-none text-dark border-bottom p-3 conv-item {% if phone == selected_phone %}active{% endif %}">
                 <div class="d-flex justify-content-between">
                     <span class="fw-bold">{{ phone }}</span>
@@ -111,7 +111,7 @@ def setup_files():
                 <span class="badge bg-success ms-2">Online</span>
             </div>
             <div class="msg-box" id="msgBox">
-                {% for msg in conversations[selected_phone]['messages'] %}
+                {% for msg in conversations.get(selected_phone, {}).get('messages', []) %}
                 <div class="msg {{ msg.role }}">
                     {% if msg.role == 'assistant' and msg.get('audio_url') %}
                         <div>{{ msg.content }}</div>
@@ -241,7 +241,11 @@ def dash():
 def s_admin():
     if not session.get("admin"): return redirect("/login")
     phone = request.args.get("phone")
-    return render_template("super_admin.html", conversations=CONVERSATIONS, selected_phone=phone)
+    # Sort conversations by last message timestamp (descending)
+    try:
+        sorted_conv = {k: v for k, v in sorted(CONVERSATIONS.items(), key=lambda item: item[1]['messages'][-1]['timestamp'] if item[1]['messages'] else 0, reverse=True)}
+    except: sorted_conv = CONVERSATIONS
+    return render_template("super_admin.html", conversations=sorted_conv, selected_phone=phone)
 
 @app.route("/admin/send", methods=["POST"])
 def send_msg():
