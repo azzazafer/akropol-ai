@@ -267,10 +267,9 @@ def setup_files():
                         <th style="font-weight:600;color:#aaa;font-size:0.75rem;">ZAMAN</th>
                         <th></th>
                     </tr>
-                </thead>
                 <tbody>
-                    {# SORTED LIST LOGIC #}
-                    {% for phone, data in memory.items()|sort(attribute='1.messages.-1.timestamp', reverse=True) %}
+                    {# STABLE LIST LOGIC #}
+                    {% for phone, data in memory.items() %}
                     {% set meta = data.get('metadata', {}) %}
                     {% set last_msg = data.messages[-1] if data.messages else None %}
                     <tr>
@@ -501,7 +500,13 @@ def logout():
 @app.route("/dashboard")
 def dash():
     if not session.get("admin"): return redirect("/login")
-    return render_template("dashboard.html", memory=CONVERSATIONS, stats={"total":len(CONVERSATIONS), "hot":0, "follow":0})
+    
+    # Secure Python-side sorting
+    try:
+        sorted_mem = {k: v for k, v in sorted(CONVERSATIONS.items(), key=lambda item: item[1]['messages'][-1]['timestamp'] if item[1]['messages'] else 0, reverse=True)}
+    except: sorted_mem = CONVERSATIONS
+    
+    return render_template("dashboard.html", memory=sorted_mem, stats={"total":len(CONVERSATIONS), "hot":0, "follow":0})
 
 @app.route("/super-admin")
 def s_admin():
