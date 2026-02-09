@@ -294,7 +294,7 @@ def setup_files():
                             {{ last_msg.time_str if last_msg else '-' }}
                         </td>
                         <td class="text-end">
-                            <a href="/super-admin?phone={{ phone }}" class="btn-action text-decoration-none">
+                            <a href="/detail?phone={{ phone }}" class="btn-action text-decoration-none">
                                 İncele <i class="fas fa-chevron-right ms-1 small"></i>
                             </a>
                         </td>
@@ -407,7 +407,72 @@ def setup_files():
         // setTimeout(function(){ location.reload(); }, 5000); // Kullanıcı yazarken yenilemesin diye kapalı, "Manuel Yenile" butonu koymak daha iyi olurdu ama basitlik için F5 yeterli.
         </script></body></html>""")
 
-    # 3. Login
+    # 3. CONVERSATION DETAIL (The User's Favorite "First Version" View)
+    detail_path = os.path.join(TEMPLATE_DIR, "conversation_detail.html")
+    with open(detail_path, "w", encoding="utf-8") as f:
+        f.write("""<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Görüşme Detayı</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background: #e5ddd5; font-family: 'Segoe UI', sans-serif; }
+        .chat-container { max-width: 800px; margin: 30px auto; background: #efe7dd; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-radius: 10px; overflow: hidden; }
+        .chat-header { background: #075e54; color: white; padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; }
+        .chat-body { padding: 20px; height: 600px; overflow-y: auto; display: flex; flex-direction: column; }
+        .msg { max-width: 75%; padding: 10px 15px; margin-bottom: 10px; border-radius: 7px; position: relative; font-size: 0.95rem; line-height: 1.4; }
+        .msg.user { background: white; align-self: flex-start; border-top-left-radius: 0; }
+        .msg.assistant { background: #dcf8c6; align-self: flex-end; border-top-right-radius: 0; }
+        .msg.system { background: #fff3cd; align-self: center; text-align: center; font-size: 0.8rem; border-radius: 10px; max-width: 90%; }
+        .timestamp { display: block; font-size: 0.7rem; color: #999; margin-top: 5px; text-align: right; }
+        .btn-cancel { background: white; color: #075e54; border: none; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+        .empty-state { text-align: center; color: #777; margin-top: 50px; }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="d-flex align-items-center gap-3">
+                <a href="/dashboard" class="btn-cancel"><i class="fas fa-arrow-left"></i> Geri</a>
+                <div>
+                    <h5 class="mb-0 fw-bold">{{ phone }}</h5>
+                    <small style="opacity:0.8">WhatsApp Görüşme Geçmişi</small>
+                </div>
+            </div>
+            <a href="/super-admin?phone={{ phone }}" class="btn btn-sm btn-outline-light">Canlı Müdahale Et</a>
+        </div>
+        <div class="chat-body" id="scrollArea">
+            {% if messages %}
+                {% for msg in messages %}
+                <div class="msg {{ msg.role }}">
+                    {% if msg.role == 'assistant' and msg.get('audio_url') %}
+                        <div>{{ msg.content }}</div>
+                        <audio controls src="{{ msg.audio_url }}" style="height:30px; margin-top:5px; max-width:100%;"></audio>
+                    {% else %}
+                        {{ msg.content }}
+                    {% endif %}
+                    <span class="timestamp">{{ msg.time_str }}</span>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <i class="fas fa-comments fa-3x mb-3"></i>
+                    <p>Henüz bu numara ile bir görüşme geçmişi bulunmuyor.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    <script>
+        var d = document.getElementById("scrollArea");
+        if(d) d.scrollTop = d.scrollHeight;
+    </script>
+</body>
+</html>""")
+
+    # 4. Login
     with open(os.path.join(TEMPLATE_DIR, "login.html"), "w", encoding="utf-8") as f:
         f.write("""<!DOCTYPE html><html><head><title>Giriş</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background:#2c3e50;display:flex;align-items:center;justify-content:center;height:100vh;}.card{width:350px;}</style></head><body><div class="card p-4"><h4 class="mb-3 text-center">Akropol Login</h4><form method="POST"><input type="password" name="password" class="form-control mb-3" placeholder="Şifre" required><button class="btn btn-dark w-100">Giriş</button></form></div></body></html>""")
 
@@ -507,6 +572,23 @@ def dash():
     except: sorted_mem = CONVERSATIONS
     
     return render_template("dashboard.html", memory=sorted_mem, stats={"total":len(CONVERSATIONS), "hot":0, "follow":0})
+
+@app.route("/detail")
+def detail():
+    if not session.get("admin"): return redirect("/login")
+    phone = request.args.get("phone", "")
+    # Robust URL decoding fix for phone numbers
+    if phone and phone.strip().startswith("90"): phone = "+" + phone.strip()
+    if phone and phone.strip().startswith(" ") and "90" in phone: phone = phone.replace(" ", "+")
+    
+    # Direct lookup
+    data = CONVERSATIONS.get(phone, {})
+    if not data and not phone.startswith("+"): 
+        # Try adding plus if missing
+        phone = "+" + phone.strip()
+        data = CONVERSATIONS.get(phone, {})
+        
+    return render_template("conversation_detail.html", phone=phone, messages=data.get("messages", []))
 
 @app.route("/super-admin")
 def s_admin():
