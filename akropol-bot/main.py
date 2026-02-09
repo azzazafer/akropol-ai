@@ -62,7 +62,9 @@ def init_db():
         db.execute('''CREATE TABLE IF NOT EXISTS leads (
             phone TEXT PRIMARY KEY,
             status TEXT DEFAULT 'NEW',
+            status TEXT DEFAULT 'NEW',
             summary TEXT,
+            score INTEGER DEFAULT 50,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
         # Messages Table
@@ -98,8 +100,8 @@ def migrate_json_to_db(force=False):
                     for phone, val in data.items():
                         # Insert Lead
                         meta = val.get("metadata", {})
-                        db.execute("INSERT OR IGNORE INTO leads (phone, status, summary) VALUES (?, ?, ?)", 
-                                   (phone, meta.get("status", "NEW"), meta.get("summary", "")))
+                        db.execute("INSERT OR IGNORE INTO leads (phone, status, summary, score) VALUES (?, ?, ?, ?)", 
+                                   (phone, meta.get("status", "NEW"), meta.get("summary", ""), 50))
                         # Insert Messages
                         for msg in val.get("messages", []):
                             raw_ts = msg.get("timestamp", time.time())
@@ -304,6 +306,12 @@ def db_save_msg(phone, role, content, audio_url=None):
     db.execute("UPDATE leads SET updated_at = CURRENT_TIMESTAMP WHERE phone = ?", (phone,))
     db.commit()
 
+def db_update_lead_meta(phone, summary, score, status):
+    db = get_db()
+    db.execute("UPDATE leads SET summary = ?, score = ?, status = ? WHERE phone = ?", 
+               (summary, score, status, phone))
+    db.commit()
+
 # --- TTS ---
 def get_tts_url(text):
     try:
@@ -345,9 +353,40 @@ def webhook():
     try:
         msgs = [{"role":"system", "content": sys_prompt}] + hist_msgs
         reply = client.chat.completions.create(model="gpt-4o", messages=msgs).choices[0].message.content
+        
+        # --- AI SCORING & SUMMARY (Parallel Call) ---
+        threading.Thread(target=analyze_lead, args=(phone, user_in, reply)).start()
+        
     except Exception as e:
         reply = "Kısa bir arıza var."
         print(e)
+
+def analyze_lead(phone, user_input, ai_reply):
+    try:
+        # Create a new context for thread
+        with app.app_context():
+            prompt = f"""
+            Müşteri Mesajı: "{user_input}"
+            Aura Cevabı: "{ai_reply}"
+            
+            GÖREV: Bu müşteri otel/devremülk için ne kadar ciddi? 
+            1. Puan ver (0-100).
+            2. Durumu 3 kelimeyle özetle.
+            3. Statü belirle (COLD: 0-40, WARM: 41-79, HOT: 80-100).
+            
+            FORMAT: PUAN|ÖZET|STATÜ
+            ÖRNEK: 85|Fiyat sordu, ilgili|HOT
+            """
+            analysis = client.chat.completions.create(model="gpt-4o", messages=[{"role":"user", "content":prompt}]).choices[0].message.content
+            parts = analysis.split('|')
+            if len(parts) >= 3:
+                score = int(parts[0].strip())
+                summary = parts[1].strip()
+                status = parts[2].strip()
+                db_update_lead_meta(phone, summary, score, status)
+                print(f"Lead Analyzed: {phone} -> {score} {status}")
+    except Exception as e:
+        print(f"Analysis Failed: {e}")
         
     resp = MessagingResponse()
     audio_url = None
@@ -400,7 +439,7 @@ def dashboard():
     
     # 2. Get Leads with Latest Message and Summary
     query = """
-    SELECT l.phone, l.status, l.summary, m.content, m.audio_url, m.timestamp 
+    SELECT l.phone, l.status, l.summary, l.score, m.content, m.audio_url, m.timestamp 
     FROM leads l
     LEFT JOIN messages m ON m.id = (
         SELECT id FROM messages WHERE phone = l.phone ORDER BY id DESC LIMIT 1
@@ -417,17 +456,12 @@ def dashboard():
         
         # Determine Status/Sentiment/Score
         status = r["status"] or "NEW"
+        score = r["score"] if r["score"] is not None else 50 # Real DB Score
+        
         sentiment = "neutral"
-        score = 50
-        if status == "HOT": 
-            sentiment = "positive"
-            score = 95
-        elif status == "WARM":
-            sentiment = "warning" 
-            score = 75
-        elif status == "COLD":
-            sentiment = "negative"
-            score = 20
+        if score >= 80: sentiment = "positive"
+        elif score >= 50: sentiment = "warning"
+        elif score < 50: sentiment = "negative"
             
         # Summary fallback
         summary = r["summary"] 
