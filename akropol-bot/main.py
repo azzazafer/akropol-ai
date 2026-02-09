@@ -120,9 +120,12 @@ def migrate_json_to_db(force=False):
         except Exception as e:
             print(f"Migration failed: {e}")
 
-# Run setup
-init_db()
-# migrate_json_to_db() # Uncomment if migration is needed, calling safely inside main block is better
+# Run setup safely
+try:
+    init_db()
+    # migrate_json_to_db() 
+except Exception as e:
+    print(f"DB Init Error: {e}")
 
 def load_kb():
     try:
@@ -320,6 +323,7 @@ def get_tts_url(text):
         if not client: return None
         fname = f"out_{int(time.time())}.mp3"
         path = os.path.join(AUDIO_DIR, fname)
+        # Voice: 'shimmer' is warm, 'alloy' is neutral. Let's try 'shimmer' for Selin.
         client.audio.speech.create(model="tts-1", voice="shimmer", input=text).stream_to_file(path)
         return url_for('static', filename=f'audio/{fname}', _external=True, _scheme='https')
     except: return None
@@ -341,7 +345,8 @@ def webhook():
     db_save_msg(phone, "user", user_in)
     
     # AI Logic
-    triggers = ["ses", "konuş", "söyle", "sesli"]
+    # Trigger voice if user sent voice OR user mentioned voice keywords
+    triggers = ["ses", "konuş", "söyle", "sesli", "arar"]
     should_speak = media or any(w in user_in.lower() for w in triggers)
     
     # Get History
@@ -349,8 +354,21 @@ def webhook():
     rows = db.execute("SELECT role, content FROM messages WHERE phone = ? ORDER BY id DESC LIMIT 6", (phone,)).fetchall()
     hist_msgs = [{"role": r["role"], "content": r["content"]} for r in rows][::-1]
     
-    sys_prompt = f"Sen {KB.get('identity',{}).get('name','Aura')}. Bilgi: {json.dumps(KB.get('hotel_info',{}))}. Kısa ve net ol."
-    if should_speak: sys_prompt += " Cevabı sesli okuyacaksın."
+    # --- PERSONA: SELIN (Warm, Emotional, Sales) ---
+    sys_prompt = f\"\"\"
+    Sen 'Selin'. Akropol Termal Tesisleri'nin kıdemli ve ilgili misafir danışmanısın.
+    
+    GÖREVİN:
+    1. Misafiri tesise davet etmek (Ailece 1 gece 2 gün ücretsiz konaklama + tesis turu).
+    2. Robotik değil, İNSANİ ve DUYGUSAL bir ton kullan. "Hımm, anlıyorum", "Çok haklısınız", "Harika bir tercih" gibi doğal tepkiler ver.
+    3. Asla "üzgünüm sesli yanıt veremiyorum" DEME. Sesli yanıt sistemin VAR.
+    4. Cevapların kısa, net ve sohbete teşvik edici olsun.
+    
+    BİLGİ BANKASI: {json.dumps(KB.get('hotel_info',{}))}
+    \"\"\"
+    
+    if should_speak: 
+        sys_prompt += " ŞU AN TELEFONDASIN. Cevabın sesli okunacak. O yüzden cümlelerin kulağa doğal gelen, samimi konuşma dilinde olsun. Emoji kullanma."
     
     try:
         msgs = [{"role":"system", "content": sys_prompt}] + hist_msgs

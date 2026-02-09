@@ -4,4 +4,3 @@ twilio
 openai
 python-dotenv
 requests
-Werkzeug
