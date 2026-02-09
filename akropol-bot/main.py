@@ -62,11 +62,13 @@ def init_db():
         db.execute('''CREATE TABLE IF NOT EXISTS leads (
             phone TEXT PRIMARY KEY,
             status TEXT DEFAULT 'NEW',
-            status TEXT DEFAULT 'NEW',
             summary TEXT,
             score INTEGER DEFAULT 50,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+        # Schema Migration: Add score column if not exists (for existing DBs)
+        try: db.execute("ALTER TABLE leads ADD COLUMN score INTEGER DEFAULT 50")
+        except: pass
         # Messages Table
         db.execute('''CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
