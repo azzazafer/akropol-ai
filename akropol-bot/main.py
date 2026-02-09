@@ -209,7 +209,7 @@ def webhook():
     if media: user_in = "[SESLİ MESAJ GELDİ]"
     
     # Save User Msg
-    db_save_msg(phone, "user", user_in)
+    db_save_msg(phone, "user", user_in, audio_url=media)
     
     # AI Logic
     # Trigger voice if user sent voice OR user mentioned voice keywords
