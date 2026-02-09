@@ -1,11 +1,12 @@
 import os
 import json
 import time
-import requests
 import datetime
 import threading
 import logging
-from flask import Flask, request, render_template, url_for, session, redirect, flash
+import sqlite3
+from flask import Flask, request, render_template, url_for, session, redirect, flash, g
+from werkzeug.security import generate_password_hash, check_password_hash
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
 from openai import OpenAI
@@ -17,7 +18,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 AUDIO_DIR = os.path.join(STATIC_DIR, "audio")
-CONVERSATIONS_FILE = os.path.join(BASE_DIR, "conversations.json")
+DB_FILE = os.path.join(BASE_DIR, "akropol.db")
 KNOWLEDGE_BASE_FILE = os.path.join(BASE_DIR, "knowledge_base.json")
 
 # Klasörleri oluştur
@@ -29,6 +30,7 @@ logging.basicConfig(level=logging.INFO)
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key_change_me")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ADMIN_HASH = generate_password_hash(ADMIN_PASSWORD) # Hash on startup
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
@@ -39,21 +41,69 @@ client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 try: twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 except: twilio_client = None
 
-# --- PERSISTENCE ---
-def load_conversations():
-    try:
-        if os.path.exists(CONVERSATIONS_FILE):
-            with open(CONVERSATIONS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except: return {}
+# --- DATABASE SETUP ---
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DB_FILE)
+        db.row_factory = sqlite3.Row
+    return db
 
-def save_conversations():
-    try:
-        with open(CONVERSATIONS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(CONVERSATIONS, f, ensure_ascii=False, indent=2)
-    except Exception as e: print(f"Save error: {e}")
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
-CONVERSATIONS = load_conversations()
+def init_db():
+    with app.app_context():
+        db = get_db()
+        # Leads Table
+        db.execute('''CREATE TABLE IF NOT EXISTS leads (
+            phone TEXT PRIMARY KEY,
+            status TEXT DEFAULT 'NEW',
+            summary TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        # Messages Table
+        db.execute('''CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT,
+            role TEXT,
+            content TEXT,
+            audio_url TEXT,
+            timestamp TEXT,
+            FOREIGN KEY(phone) REFERENCES leads(phone)
+        )''')
+        db.commit()
+
+# --- MIGRATION FROM JSON (ONE-TIME) ---
+def migrate_json_to_db():
+    if not os.path.exists(DB_FILE) or os.path.getsize(DB_FILE) < 100:
+        json_file = os.path.join(BASE_DIR, "conversations.json")
+        if os.path.exists(json_file):
+            with app.app_context():
+                db = get_db()
+                try:
+                    data = json.load(open(json_file, encoding='utf-8'))
+                    for phone, val in data.items():
+                        # Insert Lead
+                        meta = val.get("metadata", {})
+                        db.execute("INSERT OR IGNORE INTO leads (phone, status, summary) VALUES (?, ?, ?)", 
+                                   (phone, meta.get("status", "NEW"), meta.get("summary", "")))
+                        # Insert Messages
+                        for msg in val.get("messages", []):
+                            ts = datetime.datetime.fromtimestamp(msg.get("timestamp", time.time())).isoformat()
+                            db.execute("INSERT INTO messages (phone, role, content, audio_url, timestamp) VALUES (?, ?, ?, ?, ?)",
+                                       (phone, msg.get("role"), msg.get("content"), msg.get("audio_url"), ts))
+                    db.commit()
+                    print("Migration complete.")
+                except Exception as e:
+                    print(f"Migration failed: {e}")
+
+# Run setup
+init_db()
+# migrate_json_to_db() # Uncomment if migration is needed, calling safely inside main block is better
 
 def load_kb():
     try:
@@ -63,11 +113,9 @@ def load_kb():
     except: pass
     return {}
 
-KB = load_kb()
-
-# --- HTML ŞABLONLARI (REVERT TO STABLE SERVER-SIDE RENDERING) ---
+# --- HTML TEMPLATES ---
 def setup_files():
-    # 1. CLASSIC DASHBOARD (V1 - EXACT RESTORATION)
+    # 1. NEW DASHBOARD (DB-DRIVEN)
     dash_path = os.path.join(TEMPLATE_DIR, "dashboard.html")
     with open(dash_path, "w", encoding="utf-8") as f:
         f.write("""<!DOCTYPE html>
@@ -75,424 +123,92 @@ def setup_files():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aura Dashboard</title>
+    <title>Aura Dashboard DB</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root {
-            --primary-color: #ff9f43; /* Orange accent from screenshot */
-            --bg-color: #f4f6f9;
-            --card-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            --text-dark: #333;
-        }
-        body {
-            background-color: var(--bg-color);
-            font-family: 'Montserrat', sans-serif;
-            color: var(--text-dark);
-        }
-        .navbar {
-            background: white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 15px 0;
-            margin-bottom: 25px;
-            border-top: 3px solid var(--primary-color);
-        }
-        .brand-text {
-            font-weight: 700;
-            font-size: 1.25rem;
-            color: #2c3e50;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .logo-icon {
-            color: var(--primary-color);
-        }
-        .stat-card {
-            background: white;
-            border: none;
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: var(--card-shadow);
-            position: relative;
-            overflow: hidden;
-            transition: transform 0.2s;
-        }
-        .stat-card:hover { 
-            transform: translateY(-2px);
-        }
-        .stat-title {
-            color: #8898aa;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-            font-weight: 600;
-            letter-spacing: 1px;
-            margin-bottom: 10px;
-        }
-        .stat-value {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: #32325d;
-        }
-        .card-icon {
-            position: absolute;
-            right: 20px;
-            top: 20px;
-            background: #f6f9fc;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--primary-color);
-            font-size: 1.2rem;
-        }
-        .table-card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: var(--card-shadow);
-            border: none;
-        }
-        .table-header {
-            padding: 20px 25px;
-            border-bottom: 1px solid #e9ecef;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: #8898aa;
-            letter-spacing: 1px;
-        }
-        .table td {
-            vertical-align: middle;
-            padding: 15px 25px;
-            border-bottom: 1px solid #f6f9fc;
-            font-size: 0.9rem;
-        }
-        .badge-status {
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
+        :root { --primary-color: #ff9f43; --bg-color: #f4f6f9; --text-dark: #333; }
+        body { background-color: var(--bg-color); font-family: 'Montserrat', sans-serif; color: var(--text-dark); }
+        .navbar { background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 15px 0; margin-bottom: 25px; border-top: 3px solid var(--primary-color); }
+        .stat-card { background: white; border: none; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); position: relative; overflow: hidden; }
+        .stat-value { font-size: 2.5rem; font-weight: 700; color: #32325d; }
+        .card-icon { position: absolute; right: 20px; top: 20px; background: #f6f9fc; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-color); font-size: 1.2rem; }
+        .table-card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: none; }
+        .table td { vertical-align: middle; padding: 15px 25px; border-bottom: 1px solid #f6f9fc; font-size: 0.9rem; }
+        .badge-status { padding: 5px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
         .badge-HOT { background: #fee2e2; color: #ef4444; }
         .badge-WARM { background: #fef3c7; color: #f59e0b; }
-        .badge-COLD { background: #dbeafe; color: #3b82f6; }
         .badge-NEW { background: #d1fae5; color: #10b981; }
-        
-        .avatar-circle {
-            width: 40px;
-            height: 40px;
-            background: #e9ecef;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            color: #555;
-            margin-right: 15px;
-        }
-        .btn-action {
-            border: 1px solid #e2e8f0;
-            background: white;
-            color: #525f7f;
-            font-size: 0.8rem;
-            padding: 5px 15px;
-            border-radius: 5px;
-        }
-        .btn-action:hover {
-            background: #f6f9fc;
-        }
+        .avatar-circle { width: 40px; height: 40px; background: #e9ecef; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #555; margin-right: 15px; }
+        .msg-icon { font-size: 0.8rem; margin-right: 5px; color: #aaa; }
     </style>
 </head>
 <body>
-<!-- Top Loading Bar -->
 <div id="loader" style="height:3px;width:0%;background:var(--primary-color);position:fixed;top:0;left:0;z-index:9999;transition:width 0.5s;"></div>
-
-<nav class="navbar">
-    <div class="container">
-        <div class="brand-text">
-            <i class="fas fa-layer-group logo-icon"></i> AKROPOL AI
-        </div>
-        <div class="d-flex gap-3">
-             <a href="/super-admin" class="btn btn-outline-dark btn-sm rounded-pill px-3">Yönetici Girişi</a>
-             <a href="/logout" class="btn btn-light btn-sm rounded-pill text-danger">Çıkış</a>
-        </div>
-    </div>
-</nav>
-
+<nav class="navbar"><div class="container"><div class="fw-bold fs-4"><i class="fas fa-layer-group text-warning"></i> AKROPOL AI</div><a href="/logout" class="btn btn-light btn-sm text-danger">Çıkış</a></div></nav>
 <div class="container">
-    <!-- STATS ROW -->
     <div class="row g-4 mb-5">
-        <div class="col-md-4">
-            <div class="stat-card">
-                <div class="stat-title">TOPLAM GÖRÜŞME</div>
-                <div class="stat-value">{{ stats.total }}</div>
-                <div class="card-icon"><i class="fas fa-users"></i></div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="stat-card">
-                <div class="stat-title">SICAK POTANSİYEL</div>
-                <div class="stat-value text-danger">{{ stats.hot }}</div>
-                <div class="card-icon"><i class="fas fa-fire"></i></div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="stat-card">
-                <div class="stat-title">TAKİP LİSTESİ</div>
-                <div class="stat-value text-warning">{{ stats.follow }}</div>
-                <div class="card-icon"><i class="fas fa-clock"></i></div>
-            </div>
-        </div>
+        <div class="col-md-4"><div class="stat-card"><div>TOPLAM</div><div class="stat-value">{{ stats.total }}</div><div class="card-icon"><i class="fas fa-users"></i></div></div></div>
+        <div class="col-md-4"><div class="stat-card"><div>SICAK</div><div class="stat-value text-danger">{{ stats.hot }}</div><div class="card-icon"><i class="fas fa-fire"></i></div></div></div>
+        <div class="col-md-4"><div class="stat-card"><div>TAKİP</div><div class="stat-value text-warning">{{ stats.follow }}</div><div class="card-icon"><i class="fas fa-clock"></i></div></div></div>
     </div>
-
-    <!-- LIST TABLE -->
     <div class="table-card">
-        <div class="table-header d-flex justify-content-between">
-            <span>SON GÖRÜŞMELER</span>
-            <small class="text-muted"><i class="fas fa-sync-alt me-1"></i> Canlı</small>
-        </div>
+        <div class="p-4 border-bottom d-flex justify-content-between"><span>SON GÖRÜŞMELER</span><small class="text-muted"><i class="fas fa-sync-alt"></i> Canlı</small></div>
         <div class="table-responsive">
             <table class="table mb-0">
-                <thead>
-                    <tr style="background:#fcfcfc;">
-                        <th style="padding-left:25px;font-weight:600;color:#aaa;font-size:0.75rem;">MÜŞTERİ</th>
-                        <th style="font-weight:600;color:#aaa;font-size:0.75rem;">SON DURUM (AI ÖZETİ)</th>
-                        <th style="font-weight:600;color:#aaa;font-size:0.75rem;">STATÜ</th>
-                        <th style="font-weight:600;color:#aaa;font-size:0.75rem;">ZAMAN</th>
-                        <th></th>
-                    </tr>
+                <thead><tr style="background:#fcfcfc;"><th class="ps-4">MÜŞTERİ</th><th>SON MESAJ</th><th>STATÜ</th><th>ZAMAN</th><th></th></tr></thead>
                 <tbody>
-                    {# STABLE LIST LOGIC #}
-                    {% for phone, data in memory.items() %}
-                    {% set meta = data.get('metadata', {}) %}
-                    {% set last_msg = data.messages[-1] if data.messages else None %}
+                    {% for lead in leads %}
                     <tr>
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <div class="avatar-circle">{{ phone[-2:] }}</div>
-                                <div class="d-flex flex-column">
-                                    <span class="fw-bold text-dark">{{ phone }}</span>
-                                    <small class="text-muted" style="font-size:0.7rem;">WhatsApp</small>
-                                </div>
-                            </div>
+                        <td class="ps-4"><div class="d-flex align-items-center"><div class="avatar-circle">{{ lead.phone[-2:] }}</div><div><strong>{{ lead.phone }}</strong><br><small class="text-muted">WP</small></div></div></td>
+                        <td class="text-muted small" style="max-width:300px;">
+                            {% if lead.audio_url %}<i class="fas fa-microphone text-danger msg-icon"></i> Ses{% else %}<i class="fas fa-comment text-secondary msg-icon"></i>{% endif %} {{ lead.content[:50] }}...
                         </td>
-                        <td class="text-muted small" style="max-width:350px;">
-                            {{ meta.get('summary', 'Analiz bekleniyor...') }}
-                        </td>
-                        <td>
-                            <span class="badge-status badge-{{ meta.get('status', 'NEW') }}">
-                                {{ meta.get('status', 'YENİ') }}
-                            </span>
-                        </td>
-                        <td class="text-muted small">
-                            {{ last_msg.time_str if last_msg else '-' }}
-                        </td>
-                        <td class="text-end">
-                            <a href="/detail?phone={{ phone }}" class="btn-action text-decoration-none">
-                                İncele <i class="fas fa-chevron-right ms-1 small"></i>
-                            </a>
-                        </td>
+                        <td><span class="badge-status badge-{{ lead.status }}">{{ lead.status }}</span></td>
+                        <td class="text-muted small">{{ lead.time_str }}</td>
+                        <td class="text-end"><a href="/detail?phone={{ lead.phone }}" class="btn btn-sm btn-outline-secondary">İncele <i class="fas fa-chevron-right"></i></a></td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
-    
-    <div class="text-center mt-4 text-muted small">
-        &copy; 2024 Akropol AI System v1.0
-    </div>
 </div>
-
 <script>
-    // Gerçekçi Loading Bar Animasyonu
     var loader = document.getElementById("loader");
     var width = 0;
-    var interval = setInterval(function() {
-        if (width >= 100) {
-            width = 0;
-        } else {
-            width += Math.random() * 20;
-        }
-        loader.style.width = width + "%";
-    }, 500);
-
-    // 5 saniyede bir sayfayı sessizce yenile
+    setInterval(function() { width = (width >= 100) ? 0 : width + Math.random() * 20; loader.style.width = width + "%"; }, 500);
     setTimeout(() => window.location.reload(), 5000);
 </script>
+</body></html>""")
 
-</body>
-</html>""")
-
-    # 2. SUPER ADMIN (Klasik, Sorunsuz Versiyon)
-    admin_path = os.path.join(TEMPLATE_DIR, "super_admin.html")
-    with open(admin_path, "w", encoding="utf-8") as f:
-        f.write("""<!DOCTYPE html><html lang="tr"><head><title>Admin Panel</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>
-        body{background:#e5ddd5;height:100vh;overflow:hidden;}
-        .sidebar{background:white;border-right:1px solid #ddd;height:100vh;overflow-y:auto;}
-        .chat-area{height:100vh;display:flex;flex-direction:column;background:#efe7dd url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png') repeat;}
-        .msg-box{flex:1;overflow-y:auto;padding:20px;}
-        .msg{max-width:70%;padding:10px 15px;margin-bottom:10px;border-radius:7px;position:relative;font-size:0.9rem;box-shadow:0 1px 1px rgba(0,0,0,0.1);}
-        .msg.user{background:white;align-self:flex-start;float:left;clear:both;border-top-left-radius:0;}
-        .msg.assistant{background:#dcf8c6;align-self:flex-end;float:right;clear:both;border-top-right-radius:0;}
-        .msg.system{background:#fff3cd;text-align:center;font-size:0.8rem;margin:10px auto;clear:both;display:table;float:none;}
-        .time{font-size:0.7rem;color:#999;text-align:right;margin-top:3px;display:block;}
-        .conv-item:hover{background:#f5f5f5;cursor:pointer;}
-        .conv-item.active{background:#ebebeb;}
-        </style></head>
-        <body><div class="container-fluid"><div class="row">
-        <div class="col-md-3 sidebar p-0">
-            <div class="p-3 bg-light border-bottom d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Görüşmeler</h5>
-                <a href="/dashboard" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left"></i> CRM</a>
-            </div>
-            {% for phone, data in conversations.items() %}
-            <a href="/super-admin?phone={{ phone }}" class="d-block text-decoration-none text-dark border-bottom p-3 conv-item {% if phone == selected_phone %}active{% endif %}">
-                <div class="d-flex justify-content-between">
-                    <span class="fw-bold">{{ phone }}</span>
-                    <small class="text-muted">{{ data.messages[-1].time_str if data.messages else '' }}</small>
-                </div>
-                <div class="text-truncate small text-muted">{{ data.messages[-1].content if data.messages else '...' }}</div>
-            </a>
-            {% endfor %}
-        </div>
-        <div class="col-md-9 chat-area p-0">
-            {% if selected_phone %}
-            <div class="p-3 bg-light border-bottom shadow-sm">
-                <strong><i class="fab fa-whatsapp text-success"></i> {{ selected_phone }}</strong>
-                <span class="badge bg-success ms-2">Online</span>
-            </div>
-            <div class="msg-box" id="msgBox">
-                {# Try direct access first, then safe get #}
-                {% set msgs = conversations.get(selected_phone, {}).get('messages', []) %}
-                {% if not msgs and '+' in selected_phone %}
-                     {# Handle URL decoded/encoded mismatch #}
-                     {% set msgs = conversations.get(selected_phone.replace(' ', '+'), {}).get('messages', []) %}
-                {% endif %}
-                
-                {% for msg in msgs %}
-                <div class="msg {{ msg.role }}">
-                    {% if msg.role == 'assistant' and msg.get('audio_url') %}
-                        <div>{{ msg.content }}</div>
-                        <audio controls src="{{ msg.audio_url }}" style="height:30px; margin-top:5px; max-width:200px;"></audio>
-                    {% else %}
-                        {{ msg.content }}
-                    {% endif %}
-                    <span class="time">{{ msg.time_str }}</span>
-                </div>
-                {% endfor %}
-            </div>
-            <div class="p-3 bg-light">
-                <form action="/admin/send" method="POST" class="d-flex gap-2">
-                    <input type="hidden" name="phone" value="{{ selected_phone }}">
-                    <input type="text" name="message" class="form-control" placeholder="Mesaj yaz..." required autocomplete="off">
-                    <button type="submit" class="btn btn-success"><i class="fas fa-paper-plane"></i></button>
-                </form>
-            </div>
-            {% else %}
-            <div class="d-flex align-items-center justify-content-center h-100 text-muted">Solicdan bir görüşme seçin...</div>
-            {% endif %}
-        </div>
-        </div></div>
-        <script>
-        var d = document.getElementById("msgBox");
-        if(d) d.scrollTop = d.scrollHeight;
-        // Basit Oto Yenileme (5sn)
-        // setTimeout(function(){ location.reload(); }, 5000); // Kullanıcı yazarken yenilemesin diye kapalı, "Manuel Yenile" butonu koymak daha iyi olurdu ama basitlik için F5 yeterli.
-        </script></body></html>""")
-
-    # 3. CONVERSATION DETAIL (The User's Favorite "First Version" View)
+    # 2. DETAIL & LOGIN (Reuse existing logic but updated for DB if needed, keeping simple HTML)
     detail_path = os.path.join(TEMPLATE_DIR, "conversation_detail.html")
+    # Using previous HTML for detail but will feed it with DB data
     with open(detail_path, "w", encoding="utf-8") as f:
-        f.write("""<!DOCTYPE html>
-<html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Görüşme Detayı</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body { background: #e5ddd5; font-family: 'Segoe UI', sans-serif; }
-        .chat-container { max-width: 800px; margin: 30px auto; background: #efe7dd; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-radius: 10px; overflow: hidden; }
-        .chat-header { background: #075e54; color: white; padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; }
-        .chat-body { padding: 20px; height: 600px; overflow-y: auto; display: flex; flex-direction: column; }
-        .msg { max-width: 75%; padding: 10px 15px; margin-bottom: 10px; border-radius: 7px; position: relative; font-size: 0.95rem; line-height: 1.4; }
-        .msg.user { background: white; align-self: flex-start; border-top-left-radius: 0; }
-        .msg.assistant { background: #dcf8c6; align-self: flex-end; border-top-right-radius: 0; }
-        .msg.system { background: #fff3cd; align-self: center; text-align: center; font-size: 0.8rem; border-radius: 10px; max-width: 90%; }
-        .timestamp { display: block; font-size: 0.7rem; color: #999; margin-top: 5px; text-align: right; }
-        .btn-cancel { background: white; color: #075e54; border: none; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-weight: 600; font-size: 0.9rem; }
-        .empty-state { text-align: center; color: #777; margin-top: 50px; }
-    </style>
-</head>
-<body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <div class="d-flex align-items-center gap-3">
-                <a href="/dashboard" class="btn-cancel"><i class="fas fa-arrow-left"></i> Geri</a>
-                <div>
-                    <h5 class="mb-0 fw-bold">{{ phone }}</h5>
-                    <small style="opacity:0.8">WhatsApp Görüşme Geçmişi</small>
-                </div>
-            </div>
-            <a href="/super-admin?phone={{ phone }}" class="btn btn-sm btn-outline-light">Canlı Müdahale Et</a>
-        </div>
-        <div class="chat-body" id="scrollArea">
-            {% if messages %}
-                {% for msg in messages %}
-                <div class="msg {{ msg.role }}">
-                    {% if msg.role == 'assistant' and msg.get('audio_url') %}
-                        <div>{{ msg.content }}</div>
-                        <audio controls src="{{ msg.audio_url }}" style="height:30px; margin-top:5px; max-width:100%;"></audio>
-                    {% else %}
-                        {{ msg.content }}
-                    {% endif %}
-                    <span class="timestamp">{{ msg.time_str }}</span>
-                </div>
-                {% endfor %}
-            {% else %}
-                <div class="empty-state">
-                    <i class="fas fa-comments fa-3x mb-3"></i>
-                    <p>Henüz bu numara ile bir görüşme geçmişi bulunmuyor.</p>
-                </div>
-            {% endif %}
-        </div>
-    </div>
-    <script>
-        var d = document.getElementById("scrollArea");
-        if(d) d.scrollTop = d.scrollHeight;
-    </script>
-</body>
-</html>""")
+        f.write("""<!DOCTYPE html><html lang="tr"><head><title>Detay</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"><style>body{background:#e5ddd5}.chat-container{max-width:800px;margin:30px auto;background:#efe7dd;border-radius:10px;overflow:hidden}.chat-header{background:#075e54;color:white;padding:15px;display:flex;justify-content:space-between}.chat-body{height:600px;overflow-y:auto;padding:20px}.msg{max-width:75%;padding:10px;margin-bottom:10px;border-radius:7px;position:relative}.msg.user{background:white;float:left;clear:both}.msg.assistant{background:#dcf8c6;float:right;clear:both}.msg.system{background:#fff3cd;text-align:center;float:none;clear:both;margin:10px auto}.timestamp{display:block;font-size:0.7rem;color:#999;text-align:right}</style></head><body><div class="chat-container"><div class="chat-header"><a href="/dashboard" class="text-white text-decoration-none"><i class="fas fa-arrow-left"></i> Geri</a><h5>{{ phone }}</h5><div></div></div><div class="chat-body" id="scrollArea">{% for msg in messages %}<div class="msg {{ msg.role }}">{% if msg.audio_url %}<div>{{ msg.content }}</div><audio controls src="{{ msg.audio_url }}" style="height:30px;max-width:100%"></audio>{% else %}{{ msg.content }}{% endif %}<span class="timestamp">{{ msg.timestamp }}</span></div>{% endfor %}</div></div><script>document.getElementById("scrollArea").scrollTop = document.getElementById("scrollArea").scrollHeight;</script></body></html>""")
 
-    # 4. Login
+    # Login
     with open(os.path.join(TEMPLATE_DIR, "login.html"), "w", encoding="utf-8") as f:
-        f.write("""<!DOCTYPE html><html><head><title>Giriş</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background:#2c3e50;display:flex;align-items:center;justify-content:center;height:100vh;}.card{width:350px;}</style></head><body><div class="card p-4"><h4 class="mb-3 text-center">Akropol Login</h4><form method="POST"><input type="password" name="password" class="form-control mb-3" placeholder="Şifre" required><button class="btn btn-dark w-100">Giriş</button></form></div></body></html>""")
+        f.write("""<!DOCTYPE html><html><head><title>Giriş</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background:#2c3e50;display:flex;align-items:center;justify-content:center;height:100vh}.card{width:350px}</style></head><body><div class="card p-4"><h3 class="text-center mb-3">Admin Login</h3><form method="POST"><div class="mb-3"><input type="password" name="password" class="form-control" placeholder="Şifre" required></div><button class="btn btn-warning w-100 fw-bold">Giriş Yap</button></form></div></body></html>""")
 
 setup_files()
 
-# --- HELPER ---
-def get_time_str(): return datetime.datetime.now().strftime("%H:%M")
+# --- DB HELPERS ---
+def db_save_msg(phone, role, content, audio_url=None):
+    db = get_db()
+    # Ensure lead exists
+    db.execute("INSERT OR IGNORE INTO leads (phone) VALUES (?)", (phone,))
+    # Insert message
+    ts = datetime.datetime.now().isoformat()
+    db.execute("INSERT INTO messages (phone, role, content, audio_url, timestamp) VALUES (?, ?, ?, ?, ?)", 
+               (phone, role, content, audio_url, ts))
+    # Update lead timestamp
+    db.execute("UPDATE leads SET updated_at = CURRENT_TIMESTAMP WHERE phone = ?", (phone,))
+    db.commit()
 
-def update_memory(phone, role, content, meta_update=None, audio_url=None):
-    if phone not in CONVERSATIONS:
-        CONVERSATIONS[phone] = {"messages": [], "metadata": {"status": "YENİ", "summary": "Yeni görüşme"}}
-    
-    msg = {"role": role, "content": content, "timestamp": time.time(), "time_str": get_time_str()}
-    if audio_url: msg["audio_url"] = audio_url
-    
-    CONVERSATIONS[phone]["messages"].append(msg)
-    if meta_update: CONVERSATIONS[phone]["metadata"].update(meta_update)
-    save_conversations()
-
-# --- TTS & STT ---
+# --- TTS ---
 def get_tts_url(text):
     try:
         if not client: return None
@@ -505,34 +221,38 @@ def get_tts_url(text):
 # --- WEBHOOK ---
 @app.route("/webhook", methods=['POST'])
 def webhook():
+    # Load KB
+    KB = load_kb()
+    
     body = request.values.get('Body', '').strip()
     media = request.values.get('MediaUrl0')
     phone = request.values.get('From', '')
-    
-    # KNOWLEDGE BASE
-    try: kb = json.load(open(KNOWLEDGE_BASE_FILE, "r", encoding="utf-8"))
-    except: kb = {}
 
     user_in = body
     if media: user_in = "[SESLİ MESAJ GELDİ]"
-
-    update_memory(phone, "user", user_in) # Kaydet
     
-    # AI CEVAP
+    # Save User Msg
+    db_save_msg(phone, "user", user_in)
+    
+    # AI Logic
     triggers = ["ses", "konuş", "söyle", "sesli"]
     should_speak = media or any(w in user_in.lower() for w in triggers)
     
-    sys = f"""Sen {kb.get('identity',{}).get('name','Aura')}. 
-    Bilgi: {json.dumps(kb.get('hotel_info',{}))}
-    Kısa, net ve satış odaklı ol.
-    {'Cevabı SESLİ okuyacaksın, ona göre yaz.' if should_speak else ''}"""
+    # Get History
+    db = get_db()
+    rows = db.execute("SELECT role, content FROM messages WHERE phone = ? ORDER BY id DESC LIMIT 6", (phone,)).fetchall()
+    hist_msgs = [{"role": r["role"], "content": r["content"]} for r in rows][::-1]
     
-    hist = CONVERSATIONS.get(phone, {}).get("messages", [])
+    sys_prompt = f"Sen {KB.get('identity',{}).get('name','Aura')}. Bilgi: {json.dumps(KB.get('hotel_info',{}))}. Kısa ve net ol."
+    if should_speak: sys_prompt += " Cevabı sesli okuyacaksın."
+    
     try:
-        msgs = [{"role":"system","content":sys}] + [{"role":m["role"],"content":m["content"]} for m in hist[-6:]]
+        msgs = [{"role":"system", "content": sys_prompt}] + hist_msgs
         reply = client.chat.completions.create(model="gpt-4o", messages=msgs).choices[0].message.content
-    except: reply = "Size hemen dönüyorum."
-
+    except Exception as e:
+        reply = "Kısa bir arıza var."
+        print(e)
+        
     resp = MessagingResponse()
     audio_url = None
     if should_speak:
@@ -541,8 +261,8 @@ def webhook():
         else: resp.message(reply)
     else:
         resp.message(reply)
-
-    update_memory(phone, "assistant", reply, audio_url=audio_url)
+        
+    db_save_msg(phone, "assistant", reply, audio_url)
     return str(resp)
 
 # --- ROUTES ---
@@ -551,10 +271,13 @@ def index(): return redirect("/dashboard")
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method=="POST":
-        if request.form.get("password") == ADMIN_PASSWORD:
+    if request.method == "POST":
+        pwd = request.form.get("password")
+        if check_password_hash(ADMIN_HASH, pwd):
             session["admin"] = True
             return redirect("/dashboard")
+        else:
+            return render_template("login.html", error="Hatalı Şifre")
     return render_template("login.html")
 
 @app.route("/logout")
@@ -563,72 +286,82 @@ def logout():
     return redirect("/login")
 
 @app.route("/dashboard")
-def dash():
+def dashboard():
     if not session.get("admin"): return redirect("/login")
+    db = get_db()
+    # Complex query to get leads and their last message
+    query = """
+    SELECT l.phone, l.status, m.content, m.audio_url, m.timestamp 
+    FROM leads l
+    LEFT JOIN messages m ON m.id = (
+        SELECT id FROM messages WHERE phone = l.phone ORDER BY id DESC LIMIT 1
+    )
+    ORDER BY m.timestamp DESC
+    """
+    rows = db.execute(query).fetchall()
     
-    # Secure Python-side sorting
-    try:
-        sorted_mem = {k: v for k, v in sorted(CONVERSATIONS.items(), key=lambda item: item[1]['messages'][-1]['timestamp'] if item[1]['messages'] else 0, reverse=True)}
-    except: sorted_mem = CONVERSATIONS
-    
-    return render_template("dashboard.html", memory=sorted_mem, stats={"total":len(CONVERSATIONS), "hot":0, "follow":0})
+    # Process for display
+    leads = []
+    stats = {"total": 0, "hot": 0, "follow": 0}
+    for r in rows:
+        stats["total"] += 1
+        if r["status"] == "HOT": stats["hot"] += 1
+        if r["status"] == "WARM": stats["follow"] += 1
+        
+        # Format time
+        ts_str = "-"
+        if r["timestamp"]:
+            try:
+                dt = datetime.datetime.fromisoformat(r["timestamp"])
+                ts_str = dt.strftime("%H:%M")
+            except: pass
+            
+        leads.append({
+            "phone": r["phone"],
+            "status": r["status"] or "NEW",
+            "content": r["content"] or "",
+            "audio_url": r["audio_url"],
+            "time_str": ts_str
+        })
+        
+    return render_template("dashboard.html", leads=leads, stats=stats)
 
 @app.route("/detail")
 def detail():
     if not session.get("admin"): return redirect("/login")
-    phone = request.args.get("phone", "")
-    # --- ULTRA ROBUST PHONE LOOKUP ---
-    phone = request.args.get("phone", "").strip()
+    phone_arg = request.args.get("phone", "").strip()
     
-    # Candidate keys to try
-    candidates = [
-        phone,
-        "+" + phone.lstrip("+"),  # Ensure single +
-        phone.lstrip("+"),        # No +
-        phone.replace(" ", "+"),  # Space to +
-        " " + phone.lstrip("+")   # Leading space (common URL decoding issue)
-    ]
-    
-    data = {}
-    final_phone = phone
-    
-    for key in candidates:
-        if key in CONVERSATIONS:
-            data = CONVERSATIONS[key]
-            final_phone = key
-            break
-            
-    if not data:
-        # Last resort: Partial Match
-        for k in CONVERSATIONS.keys():
-            if phone.strip().replace("+","") in k.replace("+",""):
-                data = CONVERSATIONS[k]
-                final_phone = k
-                break
+    # DB Lookup (Robust)
+    db = get_db()
+    # Try exact
+    rows = db.execute("SELECT * FROM messages WHERE phone = ? ORDER BY id ASC", (phone_arg,)).fetchall()
+    if not rows:
+        # Try with plus
+        rows = db.execute("SELECT * FROM messages WHERE phone = ? ORDER BY id ASC", ("+" + phone_arg.lstrip("+"),)).fetchall()
+        if rows: phone_arg = "+" + phone_arg.lstrip("+")
         
-    return render_template("conversation_detail.html", phone=final_phone, messages=data.get("messages", []))
-
-@app.route("/super-admin")
-def s_admin():
-    if not session.get("admin"): return redirect("/login")
-    phone = request.args.get("phone")
-    # Sort conversations by last message timestamp (descending)
-    try:
-        sorted_conv = {k: v for k, v in sorted(CONVERSATIONS.items(), key=lambda item: item[1]['messages'][-1]['timestamp'] if item[1]['messages'] else 0, reverse=True)}
-    except: sorted_conv = CONVERSATIONS
-    return render_template("super_admin.html", conversations=sorted_conv, selected_phone=phone)
-
-@app.route("/admin/send", methods=["POST"])
-def send_msg():
-    if not session.get("admin"): return redirect("/login")
-    phone = request.form.get("phone")
-    text = request.form.get("message")
-    if phone and text:
+    msgs = []
+    for r in rows:
+        ts_str = r["timestamp"]
         try:
-            if twilio_client: twilio_client.messages.create(from_=TWILIO_PHONE_NUMBER, body=text, to=phone)
-            update_memory(phone, "assistant", text)
-        except Exception as e: print(e)
-    return redirect(f"/super-admin?phone={phone}")
+             dt = datetime.datetime.fromisoformat(r["timestamp"])
+             ts_str = dt.strftime("%d.%m %H:%M")
+        except: pass
+        msgs.append({
+            "role": r["role"],
+            "content": r["content"],
+            "audio_url": r["audio_url"],
+            "timestamp": ts_str
+        })
+        
+    return render_template("conversation_detail.html", phone=phone_arg, messages=msgs)
+
+# Super Admin (Legacy Redirect)
+@app.route("/super-admin")
+def super_admin(): return redirect("/dashboard")
+
+# Migrate on startup
+migrate_json_to_db()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
