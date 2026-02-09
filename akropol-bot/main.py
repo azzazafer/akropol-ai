@@ -130,73 +130,154 @@ def load_kb():
 
 # --- HTML TEMPLATES ---
 def setup_files():
-    # 1. NEW DASHBOARD (DB-DRIVEN)
-    dash_path = os.path.join(TEMPLATE_DIR, "dashboard.html")
-    with open(dash_path, "w", encoding="utf-8") as f:
-        f.write("""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aura Dashboard DB</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Akropol AI PRO</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary-color: #ff9f43; --bg-color: #f4f6f9; --text-dark: #333; }
-        body { background-color: var(--bg-color); font-family: 'Montserrat', sans-serif; color: var(--text-dark); }
-        .navbar { background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 15px 0; margin-bottom: 25px; border-top: 3px solid var(--primary-color); }
-        .stat-card { background: white; border: none; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); position: relative; overflow: hidden; }
-        .stat-value { font-size: 2.5rem; font-weight: 700; color: #32325d; }
-        .card-icon { position: absolute; right: 20px; top: 20px; background: #f6f9fc; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-color); font-size: 1.2rem; }
-        .table-card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: none; }
-        .table td { vertical-align: middle; padding: 15px 25px; border-bottom: 1px solid #f6f9fc; font-size: 0.9rem; }
-        .badge-status { padding: 5px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-        .badge-HOT { background: #fee2e2; color: #ef4444; }
-        .badge-WARM { background: #fef3c7; color: #f59e0b; }
-        .badge-NEW { background: #d1fae5; color: #10b981; }
-        .avatar-circle { width: 40px; height: 40px; background: #e9ecef; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #555; margin-right: 15px; }
-        .msg-icon { font-size: 0.8rem; margin-right: 5px; color: #aaa; }
+        :root {
+            --primary: #4f46e5;
+            --bg: #f3f4f6;
+            --card-bg: white;
+            --text-main: #111827;
+            --text-sub: #6b7280;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text-main); margin: 0; padding: 0; }
+        
+        .dashboard-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        /* HEADER */
+        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; background: white; padding: 15px 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .logo { font-weight: 800; font-size: 1.25rem; display: flex; align-items: center; gap: 10px; color: #1f2937; }
+        .badge { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; border: 1px solid #fecaca; }
+        .user-info { font-size: 0.9rem; color: var(--text-sub); }
+        .btn-exit { margin-left: 15px; color: var(--danger); text-decoration: none; font-weight: 600; border: 1px solid #fee2e2; padding: 5px 12px; border-radius: 6px; transition: all 0.2s; }
+        .btn-exit:hover { background: #fee2e2; }
+
+        /* CARDS */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .card { background: white; padding: 25px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); text-align: center; border: 1px solid #e5e7eb; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-3px); }
+        
+        div.card h3 { margin: 0 0 10px 0; font-size: 0.8rem; text-transform: uppercase; color: var(--text-sub); font-weight: 600; letter-spacing: 0.5px; }
+        .card .value { font-size: 2.5rem; font-weight: 800; color: #111827; line-height: 1.2; }
+        .card .label { font-size: 0.85rem; color: var(--text-sub); margin-top: 5px; }
+        
+        .hot-card .value { color: var(--danger); }
+        .voice-card .value { color: var(--primary); font-size: 2rem; }
+
+        /* TABLE */
+        .content-table { background: white; border-radius: 16px; padding: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .content-table h3 { margin-top: 0; font-size: 1.1rem; color: #374151; margin-bottom: 20px; border-bottom: 1px solid #F3F4F6; padding-bottom: 15px; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px 15px; color: var(--text-sub); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+        td { padding: 15px; font-size: 0.9rem; border-bottom: 1px solid #f3f4f6; color: #4b5563; vertical-align: middle; }
+        
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f9fafb; }
+        
+        .score-pill { background: #dbeafe; color: #1e40af; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.75rem; }
+        
+        /* Status sentiments used for row styling or badge logic if needed */
+        .btn-view { background: white; border: 1px solid #d1d5db; color: #374151; padding: 6px 16px; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 0.85rem; transition: all 0.2s; }
+        .btn-view:hover { border-color: var(--primary); color: var(--primary); background: #eef2ff; }
+        
+        /* Loading Bar */
+        #loader { height:3px; width:0%; background:linear-gradient(90deg, var(--primary), var(--danger)); position:fixed; top:0; left:0; z-index:9999; transition: width 0.3s; }
     </style>
 </head>
 <body>
-<div id="loader" style="height:3px;width:0%;background:var(--primary-color);position:fixed;top:0;left:0;z-index:9999;transition:width 0.5s;"></div>
-<nav class="navbar"><div class="container"><div class="fw-bold fs-4"><i class="fas fa-layer-group text-warning"></i> AKROPOL AI</div><a href="/logout" class="btn btn-light btn-sm text-danger">Çıkış</a></div></nav>
-<div class="container">
-    <div class="row g-4 mb-5">
-        <div class="col-md-4"><div class="stat-card"><div>TOPLAM</div><div class="stat-value">{{ stats.total }}</div><div class="card-icon"><i class="fas fa-users"></i></div></div></div>
-        <div class="col-md-4"><div class="stat-card"><div>SICAK</div><div class="stat-value text-danger">{{ stats.hot }}</div><div class="card-icon"><i class="fas fa-fire"></i></div></div></div>
-        <div class="col-md-4"><div class="stat-card"><div>TAKİP</div><div class="stat-value text-warning">{{ stats.follow }}</div><div class="card-icon"><i class="fas fa-clock"></i></div></div></div>
-    </div>
-    <div class="table-card">
-        <div class="p-4 border-bottom d-flex justify-content-between"><span>SON GÖRÜŞMELER</span><small class="text-muted"><i class="fas fa-sync-alt"></i> Canlı</small></div>
-        <div class="table-responsive">
-            <table class="table mb-0">
-                <thead><tr style="background:#fcfcfc;"><th class="ps-4">MÜŞTERİ</th><th>SON MESAJ</th><th>STATÜ</th><th>ZAMAN</th><th></th></tr></thead>
-                <tbody>
-                    {% for lead in leads %}
-                    <tr>
-                        <td class="ps-4"><div class="d-flex align-items-center"><div class="avatar-circle">{{ lead.phone[-2:] }}</div><div><strong>{{ lead.phone }}</strong><br><small class="text-muted">WP</small></div></div></td>
-                        <td class="text-muted small" style="max-width:300px;">
-                            {% if lead.audio_url %}<i class="fas fa-microphone text-danger msg-icon"></i> Ses{% else %}<i class="fas fa-comment text-secondary msg-icon"></i>{% endif %} {{ lead.content[:50] }}...
-                        </td>
-                        <td><span class="badge-status badge-{{ lead.status }}">{{ lead.status }}</span></td>
-                        <td class="text-muted small">{{ lead.time_str }}</td>
-                        <td class="text-end"><a href="/detail?phone={{ lead.phone }}" class="btn btn-sm btn-outline-secondary">İncele <i class="fas fa-chevron-right"></i></a></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+
+<div id="loader"></div>
+
+<div class="dashboard-container">
+    <header class="admin-header">
+        <div class="logo">🏛️ AKROPOL AI <span class="badge">PRO</span></div>
+        <div class="user-info">Hoş Geldiniz, <strong>Süper Admin</strong> <a href="/logout" class="btn-exit">Çıkış</a></div>
+    </header>
+
+    <div class="stats-grid">
+        <div class="card lead-card">
+            <h3>TOPLAM LEAD</h3>
+            <div class="value">{{ stats.total }}</div>
+            <div class="label">Müşteri Adayı</div>
+        </div>
+        <div class="card hot-card">
+            <h3>SICAK FIRSAT 🔥</h3>
+            <div class="value">{{ stats.hot }}</div>
+            <div class="label">Hemen Aranmalı</div>
+        </div>
+        <div class="card voice-card">
+            <h3>SESLİ ANALİZ 🎙️</h3>
+            <div class="value">Aktif</div>
+            <div class="label">Whisper AI Devrede</div>
         </div>
     </div>
+
+    <div class="content-table">
+        <h3>Son Görüşmeler & Canlı Akış</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Müşteri</th>
+                    <th>Son Mesaj / Özet</th>
+                    <th>Tür</th>
+                    <th>Skor</th>
+                    <th>Aksiyon</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for chat in chats %}
+                <tr class="status-{{ chat.sentiment }}">
+                    <td style="font-weight:600; color:#111827;">{{ chat.phone_number }}</td>
+                    <td style="max-width:350px;">{{ chat.last_summary }}</td>
+                    <td>
+                        {% if chat.type == 'audio' %}
+                            <span style="color:var(--primary); font-weight:600;">🎙️ Ses</span>
+                        {% else %}
+                            <span style="color:#6b7280;">💬 Metin</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="score-pill" style="{% if chat.score > 80 %}background:#dcfce7;color:#166534;{% elif chat.score < 50 %}background:#fee2e2;color:#991b1b;{% endif %}">{{ chat.score }}/100</span></td>
+                    <td><button onclick="window.location.href='/detail?phone={{ chat.id }}'" class="btn-view">İncele</button></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div style="text-align:center; margin-top:30px; font-size:0.8rem; color:#9ca3af;">
+        Auto-refreshing every 5s • Connected to akropol.db (SQLite)
+    </div>
 </div>
+
 <script>
     var loader = document.getElementById("loader");
     var width = 0;
-    setInterval(function() { width = (width >= 100) ? 0 : width + Math.random() * 20; loader.style.width = width + "%"; }, 500);
+    // Smooth infinite loader
+    setInterval(function() { 
+        width += Math.random() * 15;
+        if (width > 100) width = 0; 
+        loader.style.width = width + "%"; 
+    }, 300);
+    
+    // Auto Refresh
     setTimeout(() => window.location.reload(), 5000);
+    
+    function openChat(id) {
+        window.location.href = "/detail?phone=" + id;
+    }
 </script>
-</body></html>""")
+
+</body>
+</html>
 
     # 2. DETAIL & LOGIN (Reuse existing logic but updated for DB if needed, keeping simple HTML)
     detail_path = os.path.join(TEMPLATE_DIR, "conversation_detail.html")
@@ -317,9 +398,9 @@ def dashboard():
     stats["hot"] = db.execute("SELECT count(*) FROM leads WHERE status='HOT'").fetchone()[0]
     stats["follow"] = db.execute("SELECT count(*) FROM leads WHERE status='WARM'").fetchone()[0]
     
-    # 2. Get Leads with Latest Message
+    # 2. Get Leads with Latest Message and Summary
     query = """
-    SELECT l.phone, l.status, m.content, m.audio_url, m.timestamp 
+    SELECT l.phone, l.status, l.summary, m.content, m.audio_url, m.timestamp 
     FROM leads l
     LEFT JOIN messages m ON m.id = (
         SELECT id FROM messages WHERE phone = l.phone ORDER BY id DESC LIMIT 1
@@ -328,25 +409,41 @@ def dashboard():
     """
     rows = db.execute(query).fetchall()
     
-    # 3. Process
-    leads = []
+    # 3. Process for PRO Dashboard
+    chats = []
     for r in rows:
-        ts_str = "-"
-        if r["timestamp"]:
-            try:
-                dt = datetime.datetime.fromisoformat(r["timestamp"])
-                ts_str = dt.strftime("%H:%M")
-            except: pass
+        # Determine Type
+        msg_type = 'audio' if r["audio_url"] else 'text'
+        
+        # Determine Status/Sentiment/Score
+        status = r["status"] or "NEW"
+        sentiment = "neutral"
+        score = 50
+        if status == "HOT": 
+            sentiment = "positive"
+            score = 95
+        elif status == "WARM":
+            sentiment = "warning" 
+            score = 75
+        elif status == "COLD":
+            sentiment = "negative"
+            score = 20
             
-        leads.append({
-            "phone": r["phone"],
-            "status": r["status"] or "NEW",
-            "content": r["content"] or "",
-            "audio_url": r["audio_url"],
-            "time_str": ts_str
+        # Summary fallback
+        summary = r["summary"] 
+        if not summary or len(summary) < 2:
+            summary = (r["content"] or "")[:60] + "..."
+            
+        chats.append({
+            "id": r["phone"],
+            "phone_number": r["phone"],
+            "last_summary": summary,
+            "type": msg_type,
+            "sentiment": sentiment, # used for CSS class
+            "score": score
         })
         
-    return render_template("dashboard.html", leads=leads, stats=stats)
+    return render_template("dashboard.html", chats=chats, stats=stats)
 
 @app.route("/detail")
 def detail():
