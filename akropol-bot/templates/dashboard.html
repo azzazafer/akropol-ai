@@ -4,204 +4,315 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akropol AI Yönetim Paneli</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <title>Akropol AI PRO</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #4f46e5;
+            --bg: #f3f4f6;
+            --card-bg: white;
+            --text-main: #111827;
+            --text-sub: #6b7280;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
         body {
-            background-color: #f4f6f9;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+        }
+
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* HEADER */
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            background: white;
+            padding: 15px 25px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .logo {
+            font-weight: 800;
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #1f2937;
+        }
+
+        .badge {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            border: 1px solid #fecaca;
+        }
+
+        .user-info {
+            font-size: 0.9rem;
+            color: var(--text-sub);
+        }
+
+        .btn-exit {
+            margin-left: 15px;
+            color: var(--danger);
+            text-decoration: none;
+            font-weight: 600;
+            border: 1px solid #fee2e2;
+            padding: 5px 12px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn-exit:hover {
+            background: #fee2e2;
+        }
+
+        /* CARDS */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
         }
 
         .card {
-            border: none;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border-radius: 12px;
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            border: 1px solid #e5e7eb;
+            transition: transform 0.2s;
         }
 
-        .status-HOT {
-            background-color: #ffebee;
-            color: #c62828;
-            font-weight: bold;
-            padding: 5px 10px;
-            border-radius: 20px;
+        .card:hover {
+            transform: translateY(-3px);
         }
 
-        .status-COLD {
-            background-color: #e3f2fd;
-            color: #1565c0;
-            font-weight: bold;
-            padding: 5px 10px;
-            border-radius: 20px;
+        div.card h3 {
+            margin: 0 0 10px 0;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: var(--text-sub);
+            font-weight: 600;
+            letter-spacing: 0.5px;
         }
 
-        .status-WARM {
-            background-color: #fff3e0;
-            color: #ef6c00;
-            font-weight: bold;
-            padding: 5px 10px;
-            border-radius: 20px;
+        .card .value {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #111827;
+            line-height: 1.2;
         }
 
-        .status-CLOSED {
-            background-color: #eee;
-            color: #666;
-            font-weight: bold;
-            padding: 5px 10px;
+        .card .label {
+            font-size: 0.85rem;
+            color: var(--text-sub);
+            margin-top: 5px;
+        }
+
+        .hot-card .value {
+            color: var(--danger);
+        }
+
+        .voice-card .value {
+            color: var(--primary);
+            font-size: 2rem;
+        }
+
+        /* TABLE */
+        .content-table {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .content-table h3 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            color: #374151;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #F3F4F6;
+            padding-bottom: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 15px;
+            color: var(--text-sub);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        td {
+            padding: 15px;
+            font-size: 0.9rem;
+            border-bottom: 1px solid #f3f4f6;
+            color: #4b5563;
+            vertical-align: middle;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: #f9fafb;
+        }
+
+        .score-pill {
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 4px 10px;
             border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+
+        /* Status sentiments used for row styling or badge logic if needed */
+        .btn-view {
+            background: white;
+            border: 1px solid #d1d5db;
+            color: #374151;
+            padding: 6px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .btn-view:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: #eef2ff;
+        }
+
+        /* Loading Bar */
+        #loader {
+            height: 3px;
+            width: 0%;
+            background: linear-gradient(90deg, var(--primary), var(--danger));
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 9999;
+            transition: width 0.3s;
         }
     </style>
 </head>
 
 <body>
-    <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1"><i class="fas fa-brain me-2"></i>Akropol AI (True Intelligence)</span>
-            <div>
-                <span class="text-white me-3">Yönetici Paneli</span>
-                <a href="/super-admin" class="btn btn-sm btn-danger"><i class="fas fa-lock me-1"></i>Süper Admin</a>
-            </div>
-        </div>
-    </nav>
 
-    <div class="container">
-        <!-- İstatistik Kartları -->
-        <div class="row mb-4">
-            <div class="col-md-4">
-                <div class="card text-white bg-primary h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="card-title">Toplam Kişi</h6>
-                                <h2 class="mb-0">{{ stats.total }}</h2>
-                            </div>
-                            <i class="fas fa-users fa-2x opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
+    <div id="loader"></div>
+
+    <div class="dashboard-container">
+        <header class="admin-header">
+            <div class="logo">🏛️ AKROPOL AI <span class="badge">PRO</span></div>
+            <div class="user-info">Hoş Geldiniz, <strong>Süper Admin</strong> <a href="/logout"
+                    class="btn-exit">Çıkış</a></div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="card lead-card">
+                <h3>TOPLAM LEAD</h3>
+                <div class="value">{{ stats.total }}</div>
+                <div class="label">Müşteri Adayı</div>
             </div>
-            <div class="col-md-4">
-                <div class="card text-white bg-danger h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="card-title">🔥 Sıcak Fırsatlar</h6>
-                                <h2 class="mb-0">{{ stats.hot }}</h2>
-                            </div>
-                            <i class="fas fa-fire fa-2x opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
+            <div class="card hot-card">
+                <h3>SICAK FIRSAT 🔥</h3>
+                <div class="value">{{ stats.hot }}</div>
+                <div class="label">Hemen Aranmalı</div>
             </div>
-            <div class="col-md-4">
-                <div class="card text-white bg-warning h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="card-title">📅 Takip Edilecekler</h6>
-                                <h2 class="mb-0">{{ stats.follow }}</h2>
-                            </div>
-                            <i class="fas fa-calendar-check fa-2x opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
+            <div class="card voice-card">
+                <h3>SESLİ ANALİZ 🎙️</h3>
+                <div class="value">Aktif</div>
+                <div class="label">Whisper AI Devrede</div>
             </div>
         </div>
 
-        <!-- Lead Tablosu -->
-        <div class="card">
-            <div class="card-header bg-white py-3">
-                <h5 class="mb-0"><i class="fas fa-list me-2"></i>AI Analiz Raporu</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Telefon</th>
-                                <th>AI Özeti</th>
-                                <th>Durum</th>
-                                <th>Takip Tarihi</th>
-                                <th>Aksiyon</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for phone, data in memory.items() %}
-                            {% set meta = data.get('metadata', {}) %}
-                            <tr>
-                                <td>{{ phone }}</td>
-                                <td style="max-width: 350px;">
-                                    <small>{{ meta.get('summary', 'Analiz bekleniyor...') }}</small>
-                                </td>
-                                <td>
-                                    <span class="status-{{ meta.get('status', 'COLD') }}">
-                                        {{ meta.get('status', 'Yeni') }}
-                                    </span>
-                                </td>
-                                <td>
-                                    {% if meta.get('follow_up_date') %}
-                                    <span class="badge bg-info text-dark"><i class="fas fa-clock"></i> {{
-                                        meta.get('follow_up_date') }}</span>
-                                    {% else %}
-                                    -
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <a href="/dashboard/{{ phone }}" class="btn btn-sm btn-outline-primary"><i
-                                            class="fas fa-eye"></i> Detay</a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="content-table">
+            <h3>Son Görüşmeler & Canlı Akış</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Müşteri</th>
+                        <th>Son Mesaj / Özet</th>
+                        <th>Tür</th>
+                        <th>Skor</th>
+                        <th>Aksiyon</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for chat in chats %}
+                    <tr class="status-{{ chat.sentiment }}">
+                        <td style="font-weight:600; color:#111827;">{{ chat.phone_number }}</td>
+                        <td style="max-width:350px;">{{ chat.last_summary }}</td>
+                        <td>
+                            {% if chat.type == 'audio' %}
+                            <span style="color:var(--primary); font-weight:600;">🎙️ Ses</span>
+                            {% else %}
+                            <span style="color:#6b7280;">💬 Metin</span>
+                            {% endif %}
+                        </td>
+                        <td><span class="score-pill"
+                                style="{% if chat.score > 80 %}background:#dcfce7;color:#166534;{% elif chat.score < 50 %}background:#fee2e2;color:#991b1b;{% endif %}">{{
+                                chat.score }}/100</span></td>
+                        <td><button onclick="window.location.href='/detail?phone={{ chat.id }}'"
+                                class="btn-view">İncele</button></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="text-align:center; margin-top:30px; font-size:0.8rem; color:#9ca3af;">
+            Auto-refreshing every 5s • Connected to akropol.db (SQLite)
         </div>
     </div>
 
-    <!-- Smart Auto Refresh & Sound Alert Script -->
     <script>
-        let lastHotCount = {{ stats.hot }};
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-        function playNotificationSound() {
-            // "Ding" sesi üret
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
-            oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.5);
-            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-            oscillator.start();
-            oscillator.stop(audioCtx.currentTime + 0.5);
-        }
-
-        // Kullanıcı etkileşimi ile AudioContext'i başlat (Tarayıcı politikası gereği)
-        document.body.addEventListener('click', function () {
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-        });
-
-        // Polling loop
+        var loader = document.getElementById("loader");
+        var width = 0;
+        // Smooth infinite loader
         setInterval(function () {
-            fetch('/api/stats')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.hot > lastHotCount) {
-                        playNotificationSound();
-                        alert("🔥 YENİ SICAK FIRSAT GELDİ!");
-                        location.reload();
-                    } else if (data.total > {{ stats.total }
-                }) {
-                location.reload();
-            }
-        })
-            .catch(err => console.log("Polling error:", err));
-        }, 5000);
+            width += Math.random() * 15;
+            if (width > 100) width = 0;
+            loader.style.width = width + "%";
+        }, 300);
+
+        // Auto Refresh
+        setTimeout(() => window.location.reload(), 5000);
+
+        function openChat(id) {
+            window.location.href = "/detail?phone=" + id;
+        }
     </script>
+
 </body>
 
 </html>
