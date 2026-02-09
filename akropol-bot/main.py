@@ -86,20 +86,16 @@ def migrate_json_to_db(force=False):
     with app.app_context():
         db = get_db()
         try:
-            # Check if empty
-            try: count = db.execute("SELECT count(*) FROM leads").fetchone()[0]
-            except: count = 0
-            
-            if count == 0 or force:
-                json_file = os.path.join(BASE_DIR, "conversations.json")
-                if os.path.exists(json_file):
-                    print(f"Starting migration... Force={force}")
-                    if force:
-                        db.execute("DELETE FROM leads")
-                        db.execute("DELETE FROM messages")
-                        
-                    data = json.load(open(json_file, encoding='utf-8'))
-                    for phone, val in data.items():
+            # Always migrate to ensure history is present (INSERT OR IGNORE handles duplicates)
+            json_file = os.path.join(BASE_DIR, "conversations.json")
+            if os.path.exists(json_file):
+                print(f"Starting migration... Force={force}")
+                if force:
+                    db.execute("DELETE FROM leads")
+                    db.execute("DELETE FROM messages")
+                    
+                data = json.load(open(json_file, encoding='utf-8'))
+                for phone, val in data.items():
                         # Insert Lead
                         meta = val.get("metadata", {})
                         db.execute("INSERT OR IGNORE INTO leads (phone, status, summary, score) VALUES (?, ?, ?, ?)", 
@@ -348,12 +344,22 @@ def detail():
     
     # DB Lookup (Robust)
     db = get_db()
-    # Try exact
+    
+    # URL Decode Fix: "+90" becomes " 90" in query args usually. restore it.
+    if " " in phone_arg and "+" not in phone_arg:
+        phone_arg = phone_arg.replace(" ", "+")
+        
+    # Standard Lookup
     rows = db.execute("SELECT * FROM messages WHERE phone = ? ORDER BY id ASC", (phone_arg,)).fetchall()
+    
+    # Fallback: Try without 'whatsapp:' prefix or with/without +
     if not rows:
-        # Try with plus
-        rows = db.execute("SELECT * FROM messages WHERE phone = ? ORDER BY id ASC", ("+" + phone_arg.lstrip("+"),)).fetchall()
-        if rows: phone_arg = "+" + phone_arg.lstrip("+")
+        # If exact match failed, try partials
+        # 1. Try pure numbers match
+        import re
+        digits = "".join(filter(str.isdigit, phone_arg))
+        if len(digits) > 5:
+            rows = db.execute("SELECT * FROM messages WHERE phone LIKE ?", (f"%{digits}",)).fetchall()
         
     msgs = []
     for r in rows:
