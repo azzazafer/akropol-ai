@@ -346,11 +346,15 @@ def detail():
     db = get_db()
     
     # URL Decode Fix: "+90" becomes " 90" in query args usually. restore it.
-    if " " in phone_arg and "+" not in phone_arg:
+    if "whatsapp: " in phone_arg:
+        phone_arg = phone_arg.replace("whatsapp: ", "whatsapp:+")
+    elif " " in phone_arg and "+" not in phone_arg:
         phone_arg = phone_arg.replace(" ", "+")
         
     # Standard Lookup
     rows = db.execute("SELECT * FROM messages WHERE phone = ? ORDER BY id ASC", (phone_arg,)).fetchall()
+    
+    debug_info = f"Phone: {phone_arg} | Rows: {len(rows)}"
     
     # Fallback: Try without 'whatsapp:' prefix or with/without +
     if not rows:
@@ -358,15 +362,22 @@ def detail():
         # 1. Try pure numbers match
         import re
         digits = "".join(filter(str.isdigit, phone_arg))
+        debug_info += f" | Digits: {digits}"
         if len(digits) > 5:
             rows = db.execute("SELECT * FROM messages WHERE phone LIKE ?", (f"%{digits}",)).fetchall()
+            debug_info += f" | Fallback Rows: {len(rows)}"
         
     msgs = []
     for r in rows:
         ts_str = r["timestamp"]
         try:
-             dt = datetime.datetime.fromisoformat(r["timestamp"])
-             ts_str = dt.strftime("%d.%m %H:%M")
+            # Handle float timestamp from old json
+            try:
+                ts_val = float(r["timestamp"])
+                dt = datetime.datetime.fromtimestamp(ts_val)
+            except ValueError:
+                dt = datetime.datetime.fromisoformat(r["timestamp"])
+            ts_str = dt.strftime("%d.%m %H:%M")
         except: pass
         msgs.append({
             "role": r["role"],
@@ -375,7 +386,7 @@ def detail():
             "timestamp": ts_str
         })
         
-    return render_template("conversation_detail.html", phone=phone_arg, messages=msgs)
+    return render_template("conversation_detail.html", phone=phone_arg, messages=msgs, debug=debug_info)
 
 # Super Admin (Legacy Redirect)
 @app.route("/super-admin")
