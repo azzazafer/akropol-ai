@@ -123,7 +123,7 @@ def migrate_json_to_db(force=False):
 # Run setup safely
 try:
     init_db()
-    # migrate_json_to_db() 
+    migrate_json_to_db() 
 except Exception as e:
     print(f"DB Init Error: {e}")
 
@@ -329,6 +329,33 @@ def get_tts_url(text):
     except: return None
 
 # --- WEBHOOK ---
+def analyze_lead(phone, user_input, ai_reply):
+    try:
+        with app.app_context():
+            prompt = f"""
+            Müşteri Mesajı: "{user_input}"
+            Aura Cevabı: "{ai_reply}"
+            
+            GÖREV: Bu müşteri otel/devremülk için ne kadar ciddi? 
+            1. Puan ver (0-100).
+            2. Durumu 3 kelimeyle özetle.
+            3. Statü belirle (COLD: 0-40, WARM: 41-79, HOT: 80-100).
+            
+            FORMAT: PUAN|ÖZET|STATÜ
+            ÖRNEK: 85|Fiyat sordu, ilgili|HOT
+            """
+            analysis = client.chat.completions.create(model="gpt-4o", messages=[{"role":"user", "content":prompt}]).choices[0].message.content
+            parts = analysis.split('|')
+            if len(parts) >= 3:
+                score = int(parts[0].strip())
+                summary = parts[1].strip()
+                status = parts[2].strip()
+                db_update_lead_meta(phone, summary, score, status)
+                print(f"Lead Analyzed: {phone} -> {score} {status}")
+    except Exception as e:
+        print(f"Analysis Failed: {e}")
+
+# --- WEBHOOK ---
 @app.route("/webhook", methods=['POST'])
 def webhook():
     # Load KB
@@ -381,32 +408,7 @@ def webhook():
         reply = "Kısa bir arıza var."
         print(e)
 
-def analyze_lead(phone, user_input, ai_reply):
-    try:
-        # Create a new context for thread
-        with app.app_context():
-            prompt = f"""
-            Müşteri Mesajı: "{user_input}"
-            Aura Cevabı: "{ai_reply}"
-            
-            GÖREV: Bu müşteri otel/devremülk için ne kadar ciddi? 
-            1. Puan ver (0-100).
-            2. Durumu 3 kelimeyle özetle.
-            3. Statü belirle (COLD: 0-40, WARM: 41-79, HOT: 80-100).
-            
-            FORMAT: PUAN|ÖZET|STATÜ
-            ÖRNEK: 85|Fiyat sordu, ilgili|HOT
-            """
-            analysis = client.chat.completions.create(model="gpt-4o", messages=[{"role":"user", "content":prompt}]).choices[0].message.content
-            parts = analysis.split('|')
-            if len(parts) >= 3:
-                score = int(parts[0].strip())
-                summary = parts[1].strip()
-                status = parts[2].strip()
-                db_update_lead_meta(phone, summary, score, status)
-                print(f"Lead Analyzed: {phone} -> {score} {status}")
-    except Exception as e:
-        print(f"Analysis Failed: {e}")
+    # Function moved to global scope
         
     resp = MessagingResponse()
     audio_url = None
@@ -534,7 +536,7 @@ def detail():
 def super_admin(): return redirect("/dashboard")
 
 # Migrate on startup
-migrate_json_to_db()
+# migrate_json_to_db()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
