@@ -355,7 +355,7 @@ def webhook():
     hist_msgs = [{"role": r["role"], "content": r["content"]} for r in rows][::-1]
     
     # --- PERSONA: SELIN (Warm, Emotional, Sales) ---
-    sys_prompt = f\"\"\"
+    sys_prompt = f"""
     Sen 'Selin'. Akropol Termal Tesisleri'nin kıdemli ve ilgili misafir danışmanısın.
     
     GÖREVİN:
@@ -365,7 +365,7 @@ def webhook():
     4. Cevapların kısa, net ve sohbete teşvik edici olsun.
     
     BİLGİ BANKASI: {json.dumps(KB.get('hotel_info',{}))}
-    \"\"\"
+    """
     
     if should_speak: 
         sys_prompt += " ŞU AN TELEFONDASIN. Cevabın sesli okunacak. O yüzden cümlelerin kulağa doğal gelen, samimi konuşma dilinde olsun. Emoji kullanma."
