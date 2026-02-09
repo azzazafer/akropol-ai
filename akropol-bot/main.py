@@ -77,14 +77,23 @@ def init_db():
         )''')
         db.commit()
 
-# --- MIGRATION FROM JSON (ONE-TIME) ---
-def migrate_json_to_db():
-    if not os.path.exists(DB_FILE) or os.path.getsize(DB_FILE) < 100:
-        json_file = os.path.join(BASE_DIR, "conversations.json")
-        if os.path.exists(json_file):
-            with app.app_context():
-                db = get_db()
-                try:
+# --- MIGRATION FROM JSON (ROBUST) ---
+def migrate_json_to_db(force=False):
+    with app.app_context():
+        db = get_db()
+        try:
+            # Check if empty
+            try: count = db.execute("SELECT count(*) FROM leads").fetchone()[0]
+            except: count = 0
+            
+            if count == 0 or force:
+                json_file = os.path.join(BASE_DIR, "conversations.json")
+                if os.path.exists(json_file):
+                    print(f"Starting migration... Force={force}")
+                    if force:
+                        db.execute("DELETE FROM leads")
+                        db.execute("DELETE FROM messages")
+                        
                     data = json.load(open(json_file, encoding='utf-8'))
                     for phone, val in data.items():
                         # Insert Lead
@@ -93,13 +102,19 @@ def migrate_json_to_db():
                                    (phone, meta.get("status", "NEW"), meta.get("summary", "")))
                         # Insert Messages
                         for msg in val.get("messages", []):
-                            ts = datetime.datetime.fromtimestamp(msg.get("timestamp", time.time())).isoformat()
+                            raw_ts = msg.get("timestamp", time.time())
+                            # Float/Int -> ISO
+                            if isinstance(raw_ts, (int, float)):
+                                ts = datetime.datetime.fromtimestamp(raw_ts).isoformat()
+                            else:
+                                ts = str(raw_ts)
+                                
                             db.execute("INSERT INTO messages (phone, role, content, audio_url, timestamp) VALUES (?, ?, ?, ?, ?)",
                                        (phone, msg.get("role"), msg.get("content"), msg.get("audio_url"), ts))
                     db.commit()
                     print("Migration complete.")
-                except Exception as e:
-                    print(f"Migration failed: {e}")
+        except Exception as e:
+            print(f"Migration failed: {e}")
 
 # Run setup
 init_db()
@@ -284,6 +299,12 @@ def login():
 def logout():
     session.pop("admin", None)
     return redirect("/login")
+
+@app.route("/debug/force-migrate")
+def force_migrate():
+    if not session.get("admin"): return redirect("/login")
+    migrate_json_to_db(force=True)
+    return redirect("/dashboard")
 
 @app.route("/dashboard")
 def dashboard():
