@@ -210,6 +210,8 @@ def setup_files():
     </style>
 </head>
 <body>
+<!-- Top Loading Bar -->
+<div id="loader" style="height:3px;width:0%;background:var(--primary-color);position:fixed;top:0;left:0;z-index:9999;transition:width 0.5s;"></div>
 
 <nav class="navbar">
     <div class="container">
@@ -267,14 +269,18 @@ def setup_files():
                     </tr>
                 </thead>
                 <tbody>
-                    {% for phone, data in memory.items() %}
+                    {# SORTED LIST LOGIC #}
+                    {% for phone, data in memory.items()|sort(attribute='1.messages.-1.timestamp', reverse=True) %}
                     {% set meta = data.get('metadata', {}) %}
                     {% set last_msg = data.messages[-1] if data.messages else None %}
                     <tr>
                         <td>
                             <div class="d-flex align-items-center">
                                 <div class="avatar-circle">{{ phone[-2:] }}</div>
-                                <span class="fw-bold text-dark">{{ phone }}</span>
+                                <div class="d-flex flex-column">
+                                    <span class="fw-bold text-dark">{{ phone }}</span>
+                                    <small class="text-muted" style="font-size:0.7rem;">WhatsApp</small>
+                                </div>
                             </div>
                         </td>
                         <td class="text-muted small" style="max-width:350px;">
@@ -306,7 +312,19 @@ def setup_files():
 </div>
 
 <script>
-    // Gerçekçi olması için 5 saniyede bir sayfayı yenile
+    // Gerçekçi Loading Bar Animasyonu
+    var loader = document.getElementById("loader");
+    var width = 0;
+    var interval = setInterval(function() {
+        if (width >= 100) {
+            width = 0;
+        } else {
+            width += Math.random() * 20;
+        }
+        loader.style.width = width + "%";
+    }, 500);
+
+    // 5 saniyede bir sayfayı sessizce yenile
     setTimeout(() => window.location.reload(), 5000);
 </script>
 
