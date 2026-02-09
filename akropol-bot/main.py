@@ -67,10 +67,251 @@ KB = load_kb()
 
 # --- HTML ŞABLONLARI (REVERT TO STABLE SERVER-SIDE RENDERING) ---
 def setup_files():
-    # 1. SIMPLE DASHBOARD (Statik, Güvenilir)
+    # 1. CLASSIC DASHBOARD (V1 - EXACT RESTORATION)
     dash_path = os.path.join(TEMPLATE_DIR, "dashboard.html")
     with open(dash_path, "w", encoding="utf-8") as f:
-        f.write("""<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Akropol AI CRM</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>body{background:#f8f9fa;font-family:'Segoe UI',sans-serif}.card{border:none;box-shadow:0 2px 10px rgba(0,0,0,0.05);border-radius:10px}.status-badge{padding:5px 12px;border-radius:20px;font-size:0.8rem;font-weight:600}.bg-HOT{background:#ffe0e0;color:#d63031}.bg-WARM{background:#fff3cd;color:#ff9f43}.bg-NEW{background:#e8f5e9;color:#00b894}</style></head><body><nav class="navbar navbar-light bg-white shadow-sm mb-4"><div class="container"><a class="navbar-brand fw-bold" href="#"><i class="fas fa-robot text-warning me-2"></i>AKROPOL AI</a><div class="d-flex gap-2"><a href="/super-admin" class="btn btn-dark btn-sm">Admin Paneli</a><a href="/logout" class="btn btn-outline-danger btn-sm">Çıkış</a></div></div></nav><div class="container"><div class="row mb-4"><div class="col-md-4"><div class="card p-3"><h3 class="fw-bold">{{ stats.total }}</h3><span class="text-muted">Toplam Görüşme</span></div></div><div class="col-md-4"><div class="card p-3"><h3 class="fw-bold text-danger">{{ stats.hot }}</h3><span class="text-muted">Sıcak Müşteri</span></div></div><div class="col-md-4"><div class="card p-3"><h3 class="fw-bold text-warning">{{ stats.follow }}</h3><span class="text-muted">Takip Gerektiren</span></div></div></div><div class="card"><div class="card-body"><div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Telefon</th><th>Son Durum</th><th>Statü</th><th>Zaman</th><th>İşlem</th></tr></thead><tbody>{% for phone, data in memory.items() %}{% set meta = data.get('metadata', {}) %}{% set last_msg = data.messages[-1] if data.messages else None %}<tr><td><i class="fab fa-whatsapp text-success me-2"></i>{{ phone }}</td><td class="small text-muted" style="max-width:300px">{{ meta.get('summary', 'Henüz özet yok...') }}</td><td><span class="status-badge bg-{{ meta.get('status', 'NEW') }}">{{ meta.get('status', 'YENİ') }}</span></td><td class="small">{{ last_msg.time_str if last_msg else '-' }}</td><td><a href="/super-admin?phone={{ phone }}" class="btn btn-light btn-sm border">Detay</a></td></tr>{% endfor %}</tbody></table></div></div></div></div></body></html>""")
+        f.write("""<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #ff9f43; /* Orange accent from screenshot */
+            --bg-color: #f4f6f9;
+            --card-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            --text-dark: #333;
+        }
+        body {
+            background-color: var(--bg-color);
+            font-family: 'Montserrat', sans-serif;
+            color: var(--text-dark);
+        }
+        .navbar {
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            padding: 15px 0;
+            margin-bottom: 25px;
+            border-top: 3px solid var(--primary-color);
+        }
+        .brand-text {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: #2c3e50;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .logo-icon {
+            color: var(--primary-color);
+        }
+        .stat-card {
+            background: white;
+            border: none;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: var(--card-shadow);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .stat-card:hover { 
+            transform: translateY(-2px);
+        }
+        .stat-title {
+            color: #8898aa;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #32325d;
+        }
+        .card-icon {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            background: #f6f9fc;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary-color);
+            font-size: 1.2rem;
+        }
+        .table-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+            border: none;
+        }
+        .table-header {
+            padding: 20px 25px;
+            border-bottom: 1px solid #e9ecef;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #8898aa;
+            letter-spacing: 1px;
+        }
+        .table td {
+            vertical-align: middle;
+            padding: 15px 25px;
+            border-bottom: 1px solid #f6f9fc;
+            font-size: 0.9rem;
+        }
+        .badge-status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-HOT { background: #fee2e2; color: #ef4444; }
+        .badge-WARM { background: #fef3c7; color: #f59e0b; }
+        .badge-COLD { background: #dbeafe; color: #3b82f6; }
+        .badge-NEW { background: #d1fae5; color: #10b981; }
+        
+        .avatar-circle {
+            width: 40px;
+            height: 40px;
+            background: #e9ecef;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: #555;
+            margin-right: 15px;
+        }
+        .btn-action {
+            border: 1px solid #e2e8f0;
+            background: white;
+            color: #525f7f;
+            font-size: 0.8rem;
+            padding: 5px 15px;
+            border-radius: 5px;
+        }
+        .btn-action:hover {
+            background: #f6f9fc;
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="container">
+        <div class="brand-text">
+            <i class="fas fa-layer-group logo-icon"></i> AKROPOL AI
+        </div>
+        <div class="d-flex gap-3">
+             <a href="/super-admin" class="btn btn-outline-dark btn-sm rounded-pill px-3">Yönetici Girişi</a>
+             <a href="/logout" class="btn btn-light btn-sm rounded-pill text-danger">Çıkış</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <!-- STATS ROW -->
+    <div class="row g-4 mb-5">
+        <div class="col-md-4">
+            <div class="stat-card">
+                <div class="stat-title">TOPLAM GÖRÜŞME</div>
+                <div class="stat-value">{{ stats.total }}</div>
+                <div class="card-icon"><i class="fas fa-users"></i></div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card">
+                <div class="stat-title">SICAK POTANSİYEL</div>
+                <div class="stat-value text-danger">{{ stats.hot }}</div>
+                <div class="card-icon"><i class="fas fa-fire"></i></div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card">
+                <div class="stat-title">TAKİP LİSTESİ</div>
+                <div class="stat-value text-warning">{{ stats.follow }}</div>
+                <div class="card-icon"><i class="fas fa-clock"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LIST TABLE -->
+    <div class="table-card">
+        <div class="table-header d-flex justify-content-between">
+            <span>SON GÖRÜŞMELER</span>
+            <small class="text-muted"><i class="fas fa-sync-alt me-1"></i> Canlı</small>
+        </div>
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead>
+                    <tr style="background:#fcfcfc;">
+                        <th style="padding-left:25px;font-weight:600;color:#aaa;font-size:0.75rem;">MÜŞTERİ</th>
+                        <th style="font-weight:600;color:#aaa;font-size:0.75rem;">SON DURUM (AI ÖZETİ)</th>
+                        <th style="font-weight:600;color:#aaa;font-size:0.75rem;">STATÜ</th>
+                        <th style="font-weight:600;color:#aaa;font-size:0.75rem;">ZAMAN</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for phone, data in memory.items() %}
+                    {% set meta = data.get('metadata', {}) %}
+                    {% set last_msg = data.messages[-1] if data.messages else None %}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="avatar-circle">{{ phone[-2:] }}</div>
+                                <span class="fw-bold text-dark">{{ phone }}</span>
+                            </div>
+                        </td>
+                        <td class="text-muted small" style="max-width:350px;">
+                            {{ meta.get('summary', 'Analiz bekleniyor...') }}
+                        </td>
+                        <td>
+                            <span class="badge-status badge-{{ meta.get('status', 'NEW') }}">
+                                {{ meta.get('status', 'YENİ') }}
+                            </span>
+                        </td>
+                        <td class="text-muted small">
+                            {{ last_msg.time_str if last_msg else '-' }}
+                        </td>
+                        <td class="text-end">
+                            <a href="/super-admin?phone={{ phone }}" class="btn-action text-decoration-none">
+                                İncele <i class="fas fa-chevron-right ms-1 small"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="text-center mt-4 text-muted small">
+        &copy; 2024 Akropol AI System v1.0
+    </div>
+</div>
+
+<script>
+    // Gerçekçi olması için 5 saniyede bir sayfayı yenile
+    setTimeout(() => window.location.reload(), 5000);
+</script>
+
+</body>
+</html>""")
 
     # 2. SUPER ADMIN (Klasik, Sorunsuz Versiyon)
     admin_path = os.path.join(TEMPLATE_DIR, "super_admin.html")
