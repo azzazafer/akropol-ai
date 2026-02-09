@@ -577,18 +577,36 @@ def dash():
 def detail():
     if not session.get("admin"): return redirect("/login")
     phone = request.args.get("phone", "")
-    # Robust URL decoding fix for phone numbers
-    if phone and phone.strip().startswith("90"): phone = "+" + phone.strip()
-    if phone and phone.strip().startswith(" ") and "90" in phone: phone = phone.replace(" ", "+")
+    # --- ULTRA ROBUST PHONE LOOKUP ---
+    phone = request.args.get("phone", "").strip()
     
-    # Direct lookup
-    data = CONVERSATIONS.get(phone, {})
-    if not data and not phone.startswith("+"): 
-        # Try adding plus if missing
-        phone = "+" + phone.strip()
-        data = CONVERSATIONS.get(phone, {})
+    # Candidate keys to try
+    candidates = [
+        phone,
+        "+" + phone.lstrip("+"),  # Ensure single +
+        phone.lstrip("+"),        # No +
+        phone.replace(" ", "+"),  # Space to +
+        " " + phone.lstrip("+")   # Leading space (common URL decoding issue)
+    ]
+    
+    data = {}
+    final_phone = phone
+    
+    for key in candidates:
+        if key in CONVERSATIONS:
+            data = CONVERSATIONS[key]
+            final_phone = key
+            break
+            
+    if not data:
+        # Last resort: Partial Match
+        for k in CONVERSATIONS.keys():
+            if phone.strip().replace("+","") in k.replace("+",""):
+                data = CONVERSATIONS[k]
+                final_phone = k
+                break
         
-    return render_template("conversation_detail.html", phone=phone, messages=data.get("messages", []))
+    return render_template("conversation_detail.html", phone=final_phone, messages=data.get("messages", []))
 
 @app.route("/super-admin")
 def s_admin():
