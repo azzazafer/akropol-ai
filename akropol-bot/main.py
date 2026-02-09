@@ -310,7 +310,14 @@ def force_migrate():
 def dashboard():
     if not session.get("admin"): return redirect("/login")
     db = get_db()
-    # Complex query to get leads and their last message
+    
+    # 1. Real Stats Queries
+    stats = {}
+    stats["total"] = db.execute("SELECT count(*) FROM leads").fetchone()[0]
+    stats["hot"] = db.execute("SELECT count(*) FROM leads WHERE status='HOT'").fetchone()[0]
+    stats["follow"] = db.execute("SELECT count(*) FROM leads WHERE status='WARM'").fetchone()[0]
+    
+    # 2. Get Leads with Latest Message
     query = """
     SELECT l.phone, l.status, m.content, m.audio_url, m.timestamp 
     FROM leads l
@@ -321,15 +328,9 @@ def dashboard():
     """
     rows = db.execute(query).fetchall()
     
-    # Process for display
+    # 3. Process
     leads = []
-    stats = {"total": 0, "hot": 0, "follow": 0}
     for r in rows:
-        stats["total"] += 1
-        if r["status"] == "HOT": stats["hot"] += 1
-        if r["status"] == "WARM": stats["follow"] += 1
-        
-        # Format time
         ts_str = "-"
         if r["timestamp"]:
             try:
