@@ -1,0 +1,9 @@
+Flask
+gunicorn
+twilio
+openai
+python-dotenv
+requests
+flask-sock
+simple-websocket
+gevent
