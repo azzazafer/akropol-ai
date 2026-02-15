@@ -265,7 +265,7 @@ def async_outbound_call(phone, name, delay=20):
             
             # TRIGGER REAL CALL
             if twilio_client:
-                public_url = os.getenv("PUBLIC_URL", "https://akropol-bot.onrender.com") 
+                public_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com") 
                 
                 # Safer URL construction
                 safe_name = urllib.parse.quote(name)
