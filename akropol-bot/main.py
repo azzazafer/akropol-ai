@@ -12,6 +12,8 @@ from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
 from openai import OpenAI
 from dotenv import load_dotenv
+from fuzzywuzzy import process
+import phonenumbers
 
 # --- KONFİGÜRASYON ---
 load_dotenv()
@@ -205,6 +207,34 @@ def check_safety_guard(phone, text):
                 return True
     except: pass
     return False
+
+# --- REAL-TIME SALES LOGIC (Dynamic Rebuttal) ---
+def get_best_rebuttal(user_input, kb):
+    """
+    Latency < 10ms. Instantly detects objections and aims for the kill.
+    Uses simple keyword matching for zero-latency vs embedding search.
+    """
+    if not user_input or len(user_input) < 3: return None
+    user_input = user_input.lower()
+    objections = kb.get("objection_handling", {})
+    
+    # 1. Price Objection
+    if any(w in user_input for w in ["pahalı", "bütçe", "fiyat", "indir", "kaç para", "çok para"]):
+        return objections.get("price_too_high")
+        
+    # 2. Distance Objection
+    if any(w in user_input for w in ["uzak", "yol", "araba", "benzin", "ulaşım", "beypazarı"]):
+        return objections.get("distance")
+        
+    # 3. Spouse/Partner Objection
+    if any(w in user_input for w in ["eşim", "hanım", "beyim", "kocam", "karım", "sorayım"]):
+        return objections.get("spouse")
+        
+    # 4. Trust Objection
+    if any(w in user_input for w in ["güven", "dolandır", "gerçek mi", "yalan", "kandır"]):
+        return objections.get("trust")
+        
+    return None
 
 # --- ASYNC SPEED-TO-LEAD ---
 def async_outbound_call(phone, name):
