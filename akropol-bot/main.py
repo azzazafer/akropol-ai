@@ -14,6 +14,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from fuzzywuzzy import process
 import phonenumbers
+from flask_sock import Sock
 
 # --- KONFİGÜRASYON ---
 load_dotenv()
@@ -31,6 +32,7 @@ for d in [TEMPLATE_DIR, STATIC_DIR, AUDIO_DIR]:
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
+sock = Sock(app) # WebSocket Initialization
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key_change_me")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 ADMIN_HASH = generate_password_hash(ADMIN_PASSWORD) # Hash on startup
@@ -262,6 +264,44 @@ def async_outbound_call(phone, name):
                 print(f"Speed-to-Lead Executed: {phone}")
         except Exception as e:
             print(f"Async Task Failed: {e}")
+
+# --- VOICE STREAMING (TWILIO WEBSOCKETS) ---
+@app.route("/voice-stream", methods=['POST'])
+def voice_stream():
+    """
+    TwiML endpoint that connects the call to our WebSocket stream.
+    """
+    response = MessagingResponse() # Actually VoiceResponse, but using string manipulation for TwiML
+    # Manual TwiML for Voice Stream
+    xml = f"""
+    <Response>
+        <Connect>
+            <Stream url="wss://{request.host}/stream" />
+        </Connect>
+    </Response>
+    """
+    return xml, 200, {'Content-Type': 'application/xml'}
+
+@sock.route('/stream')
+def stream(ws):
+    """
+    WebSocket handler for real-time audio processing.
+    """
+    logging.info("WebSocket Connection Accepted")
+    while True:
+        message = ws.receive()
+        if message is None: break
+        
+        data = json.loads(message)
+        if data['event'] == 'start':
+            logging.info(f"Stream started: {data['start']['streamSid']}")
+        elif data['event'] == 'media':
+            # This is where raw audio comes in (ulaw/8000hz)
+            # Todo: Feed to STT engine (Deepgram/OpenAI Whisper Realtime)
+            pass
+        elif data['event'] == 'stop':
+            logging.info("Stream stopped")
+            break
 
 # --- WEBHOOKS ---
 @app.route("/webhook-meta", methods=['POST'])
