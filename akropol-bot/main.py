@@ -15,6 +15,10 @@ from dotenv import load_dotenv
 from fuzzywuzzy import process
 import phonenumbers
 from flask_sock import Sock
+import urllib.parse
+import audioop
+import base64
+import io
 
 # --- KONFİGÜRASYON ---
 load_dotenv()
@@ -198,16 +202,25 @@ def get_hybrid_tts_url(text, duration_so_far=0):
 def check_safety_guard(phone, text):
     """
     Safety Guard: Detects keywords related to death, sickness, accidents.
+    Uses GPT-4o-mini for Intent Analysis as requested.
     """
     try:
-        KB = load_kb()
-        triggers = KB.get("safety_guard", {}).get("triggers", [])
+        # Quick keyword check first (optimization)
+        triggers = ["vefat", "ölüm", "kaza", "hastane", "cenaze", "başınız sağolsun", "kaybettik"]
         text_lower = text.lower()
-        for t in triggers:
-            if t in text_lower:
+        if any(t in text_lower for t in triggers):
+            # Verify intent with GPT
+            prompt = f"Analyze if this text indicates a recent death, serious illness, or tragedy requiring condolences. Respond 'YES' or 'NO'. Text: '{text}'"
+            response = client.chat.completions.create(
+                model="gpt-4o-mini", 
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
+            if "YES" in response.choices[0].message.content.upper():
                 db_set_safety_mode(phone)
                 return True
-    except: pass
+    except Exception as e:
+        print(f"Safety Guard Error: {e}")
     return False
 
 # --- REAL-TIME SALES LOGIC (Dynamic Rebuttal) ---
@@ -239,44 +252,77 @@ def get_best_rebuttal(user_input, kb):
     return None
 
 # --- ASYNC SPEED-TO-LEAD ---
-def async_outbound_call(phone, name):
+# --- ASYNC SPEED-TO-LEAD ---
+def async_outbound_call(phone, name, delay=20):
     """
     Simulates asyncio background task for Speed-to-Lead.
-    Waits 15 seconds then sends a template message.
+    Waits 'delay' seconds (default 20) then triggers a REAL VOICE CALL.
     """
     with app.app_context():
         try:
-            print(f"Speed-to-Lead Timer Started: {phone}")
-            time.sleep(15)
+            print(f"Speed-to-Lead Timer Started: {phone} (Delay: {delay}s)")
+            if delay > 0: time.sleep(delay)
             
-            KB = load_kb()
-            # Send Template Message
-            msg = f"Merhaba {name}, ben Akropol Termal'den Aura. Başvurunuzu şimdi aldım. Hayalinizdeki tatili konuşmak için müsait misiniz?"
-            
-            # Use Twilio to send
+            # TRIGGER REAL CALL
             if twilio_client:
-                twilio_client.messages.create(
-                    from_=TWILIO_PHONE_NUMBER,
+                public_url = os.getenv("PUBLIC_URL", "https://akropol-bot.onrender.com") 
+                
+                # Safer URL construction
+                safe_name = urllib.parse.quote(name)
+                stream_url = f"{public_url}/voice-stream?name={safe_name}&phone={phone}"
+                
+                # Clean Sender Number
+                # Use User's ACTIVE Twilio Number from screenshot
+                # +1 618 776 2828
+                sender = "+16187762828"
+                
+                call = twilio_client.calls.create(
                     to=phone,
-                    body=msg
+                    from_=sender,
+                    url=stream_url,
+                    method="POST"
                 )
-                db_save_msg(phone, "assistant", msg)
-                print(f"Speed-to-Lead Executed: {phone}")
+                
+                msg = f"Sistem: {name} aranıyor... Call SID: {call.sid}"
+                db_save_msg(phone, "system", msg)
+                print(f"Speed-to-Lead Call Initiated: {phone} | {call.sid}")
         except Exception as e:
-            print(f"Async Task Failed: {e}")
+            print(f"Async Call Failed: {e}")
+
+@app.route("/test-call")
+def test_call():
+    """
+    Manual Trigger for Testing.
+    Usage: /test-call?phone=5551234567&name=Ahmet
+    """
+    phone = request.args.get("phone", "").strip().replace(" ", "")
+    name = request.args.get("name", "Misafir")
+    
+    # Auto-Format Turkish Numbers
+    if phone.startswith("0"): phone = phone[1:]
+    if not phone.startswith("+"): phone = "+90" + phone
+    
+    threading.Thread(target=async_outbound_call, args=(phone, name, 0)).start()
+    return f"Calling {phone} immediately...<br>Check your phone.", 200
 
 # --- VOICE STREAMING (TWILIO WEBSOCKETS) ---
 @app.route("/voice-stream", methods=['POST'])
 def voice_stream():
     """
     TwiML endpoint that connects the call to our WebSocket stream.
+    Passes query params to the WebSocket URL.
     """
-    response = MessagingResponse() # Actually VoiceResponse, but using string manipulation for TwiML
-    # Manual TwiML for Voice Stream
+    name = request.args.get('name', 'Misafirimiz')
+    phone = request.args.get('phone', 'Unknown')
+    
+    # Safe quote
+    safe_name = urllib.parse.quote(name)
+    
+    response = MessagingResponse() 
     xml = f"""
     <Response>
         <Connect>
-            <Stream url="wss://{request.host}/stream" />
+            <Stream url="wss://{request.host}/stream?name={safe_name}&phone={phone}" />
         </Connect>
     </Response>
     """
@@ -285,20 +331,130 @@ def voice_stream():
 @sock.route('/stream')
 def stream(ws):
     """
-    WebSocket handler for real-time audio processing.
+    WebSocket handler for real-time audio processing (The Brain Connection).
+    STT -> Analysis -> LLM -> TTS Loop.
     """
     logging.info("WebSocket Connection Accepted")
+    
+    # Get Metadata
+    name = request.args.get('name', 'Misafirimiz')
+    phone = request.args.get('phone', 'Unknown')
+    
+    stream_sid = None
+    buffer = bytearray()
+    
+    # Helper: Send TTS Audio
+    def send_tts(text):
+        if not text or not stream_sid: return
+        try:
+            logging.info(f"Aura Speaking: {text}")
+            # OpenAI TTS (pcm -> ulaw conversion)
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice="shimmer",
+                input=text,
+                response_format="pcm"
+            )
+            # Convert 24kHz PCM to 8kHz u-law
+            pcm_data = response.content
+            # Resample 24000 -> 8000
+            pcm_8k, _ = audioop.ratecv(pcm_data, 2, 1, 24000, 8000, None)
+            # Lin -> Ulaw
+            ulaw_data = audioop.lin2ulaw(pcm_8k, 2)
+            # Encode
+            payload = base64.b64encode(ulaw_data).decode("utf-8")
+            
+            msg = {
+                "event": "media",
+                "streamSid": stream_sid,
+                "media": {
+                    "payload": payload
+                }
+            }
+            ws.send(json.dumps(msg))
+            
+            # Also save to DB
+            db_save_msg(phone, "assistant", text)
+            
+        except Exception as e:
+            logging.error(f"TTS Error: {e}")
+
+    # Helper: Transcribe
+    def transcribe(audio_bytes):
+        try:
+            # Create a WAV file in memory
+            import wave
+            with io.BytesIO() as wav_io:
+                with wave.open(wav_io, 'wb') as wav_file:
+                    wav_file.setnchannels(1)
+                    wav_file.setsampwidth(2) # 16-bit
+                    wav_file.setframerate(8000)
+                    # Ulaw to Lin
+                    pcm_data = audioop.ulaw2lin(audio_bytes, 2)
+                    wav_file.writeframes(pcm_data)
+                
+                wav_io.seek(0)
+                wav_io.name = "audio.wav" # Important for OpenAI
+                
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1", 
+                    file=wav_io,
+                    language="tr"
+                )
+                return transcript.text
+        except Exception as e:
+            logging.error(f"STT Error: {e}")
+            return None
+
     while True:
         message = ws.receive()
         if message is None: break
         
         data = json.loads(message)
         if data['event'] == 'start':
-            logging.info(f"Stream started: {data['start']['streamSid']}")
+            stream_sid = data['start']['streamSid']
+            logging.info(f"Stream started: {stream_sid}")
+            
+            # THE HOOK (Scenario A: Elit Uzman - Polished)
+            time.sleep(0.5)
+            hook_text = f"Merhaba {name} Bey... (0.8s pause) ... Akropol Termal'den Aura ben. Az önceki başvurunuzu görünce sizi bekletmek istemedim. Hayalinizdeki tatil için sadece bir dakikanız var mı?"
+            send_tts(hook_text)
+            
         elif data['event'] == 'media':
-            # This is where raw audio comes in (ulaw/8000hz)
-            # Todo: Feed to STT engine (Deepgram/OpenAI Whisper Realtime)
-            pass
+            # Accumulate Audio
+            chunk = base64.b64decode(data['media']['payload'])
+            buffer.extend(chunk)
+            
+            # Refined Buffer Handling: 1.5 seconds (12000 bytes at 8kHz/1byte)
+            if len(buffer) > 12000:
+                text = transcribe(buffer)
+                buffer.clear() # Clear immediately
+                
+                if text and len(text) > 2: # Lower threshold slightly
+                    logging.info(f"TRANSCRIPTION DEBUG: '{text}'") # EXACT transcription log
+                    db_save_msg(phone, "user", text)
+                    
+                    # 1. Safety Guard
+                    if check_safety_guard(phone, text):
+                        send_tts("Başımız sağolsun, iyi günler dilerim.")
+                        continue
+                        
+                    # 2. Analyze Lead (Async)
+                    threading.Thread(target=analyze_lead, args=(phone, text, "...")).start()
+                    
+                    # 3. Rebuttal or LLM
+                    rebuttal = get_best_rebuttal(text, load_kb())
+                    if rebuttal:
+                        send_tts(rebuttal)
+                    else:
+                        # Generate LLM Response
+                        prompt = f"Sen Aura. Müşteri dedi ki: '{text}'. Kısa, ikna edici cevap ver. Hedef: Randevu."
+                        response = client.chat.completions.create(
+                            model="gpt-4o",
+                            messages=[{"role": "system", "content": prompt}]
+                        ).choices[0].message.content
+                        send_tts(response)
+
         elif data['event'] == 'stop':
             logging.info("Stream stopped")
             break

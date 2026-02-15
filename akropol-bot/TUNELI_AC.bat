@@ -15,5 +15,5 @@ echo  ORNEK: Forwarding https://abcd-1234.ngrok-free.app
 echo  O LINKI KOPYALA VE TWILIO'YA YAPISTIR.
 echo ******************************************************
 echo.
-tools\ngrok.exe http 5000
+tools\ngrok.exe http 8080
 pause

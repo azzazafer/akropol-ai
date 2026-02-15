@@ -4,3 +4,6 @@ twilio
 openai
 python-dotenv
 requests
+flask-sock
+fuzzywuzzy
+phonenumbers
