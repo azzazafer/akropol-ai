@@ -12,8 +12,6 @@ from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
 from openai import OpenAI
 from dotenv import load_dotenv
-from fuzzywuzzy import process
-import phonenumbers
 from flask_sock import Sock
 import urllib.parse
 import audioop

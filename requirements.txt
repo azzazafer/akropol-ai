@@ -5,5 +5,5 @@ openai
 python-dotenv
 requests
 flask-sock
-fuzzywuzzy
-phonenumbers
+simple-websocket
+gevent
