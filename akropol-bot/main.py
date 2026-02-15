@@ -372,11 +372,15 @@ def voice_stream():
     # Safe quote
     safe_name = urllib.parse.quote(name)
     
+    # FORCE WSS Protocol and Render Domain
+    render_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com")
+    host = render_url.replace("https://", "")
+    
     response = MessagingResponse() 
     xml = f"""
     <Response>
         <Connect>
-            <Stream url="wss://{request.host}/stream?name={safe_name}&phone={phone}" />
+            <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
         </Connect>
     </Response>
     """
