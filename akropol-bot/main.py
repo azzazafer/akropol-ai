@@ -14,9 +14,66 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from flask_sock import Sock
 import urllib.parse
-import audioop
+# import audioop  <-- DEPRECATED IN PYTHON 3.13
 import base64
 import io
+import math
+
+# --- G.711 MU-LAW ENCODER/DECODER (Embedded for Python 3.13 Compat) ---
+BIAS = 0x84
+CLIP = 32635
+
+def lin2ulaw(pcm_val):
+    pcm_val = pcm_val >> 2
+    if pcm_val < 0:
+        pcm_val = -pcm_val
+        sign = 0x80
+    else:
+        sign = 0x00
+    if pcm_val > CLIP: pcm_val = CLIP
+    pcm_val += BIAS
+    exponent = int(math.log(pcm_val, 2)) - 7
+    mantissa = (pcm_val >> (exponent + 3)) & 0x0F
+    ulaw_byte = ~(sign | (exponent << 4) | mantissa)
+    return ulaw_byte & 0xFF
+
+def ulaw2lin(ulaw_byte):
+    ulaw_byte = ~ulaw_byte
+    sign = ulaw_byte & 0x80
+    exponent = (ulaw_byte >> 4) & 0x07
+    mantissa = ulaw_byte & 0x0F
+    linear = (mantissa << 3) + 0x84
+    linear <<= exponent
+    linear -= 0x84
+    if sign: linear = -linear
+    return linear << 2
+
+def audioop_lin2ulaw(fragment, width):
+    # Assumes width=2 (16-bit PCM)
+    out = bytearray()
+    for i in range(0, len(fragment), 2):
+        sample = int.from_bytes(fragment[i:i+2], byteorder='little', signed=True)
+        out.append(lin2ulaw(sample))
+    return bytes(out)
+
+def audioop_ulaw2lin(fragment, width):
+    # Assumes width=2 (16-bit PCM out)
+    out = bytearray()
+    for b in fragment:
+        sample = ulaw2lin(b)
+        out.extend(sample.to_bytes(2, byteorder='little', signed=True))
+    return bytes(out)
+
+# Mock ratecv (Super simple resampling: Drop samples for 24k->8k)
+def audioop_ratecv(fragment, width, nchannels, inrate, outrate, state):
+    # Only supports 24k -> 8k (factor 3)
+    if inrate == 24000 and outrate == 8000:
+        out = bytearray()
+        for i in range(0, len(fragment), 6): # Skip every 3 samples (2 bytes each)
+            out.extend(fragment[i:i+2])
+        return bytes(out), None
+    return fragment, None # Fallback
+
 
 # --- KONFİGÜRASYON ---
 load_dotenv()
@@ -352,12 +409,12 @@ def stream(ws):
                 input=text,
                 response_format="pcm"
             )
-            # Convert 24kHz PCM to 8kHz u-law
+            # Convert 24kHz PCM to 8kHz u-law (Using Custom Funcs)
             pcm_data = response.content
             # Resample 24000 -> 8000
-            pcm_8k, _ = audioop.ratecv(pcm_data, 2, 1, 24000, 8000, None)
+            pcm_8k, _ = audioop_ratecv(pcm_data, 2, 1, 24000, 8000, None)
             # Lin -> Ulaw
-            ulaw_data = audioop.lin2ulaw(pcm_8k, 2)
+            ulaw_data = audioop_lin2ulaw(pcm_8k, 2)
             # Encode
             payload = base64.b64encode(ulaw_data).decode("utf-8")
             
@@ -386,8 +443,8 @@ def stream(ws):
                     wav_file.setnchannels(1)
                     wav_file.setsampwidth(2) # 16-bit
                     wav_file.setframerate(8000)
-                    # Ulaw to Lin
-                    pcm_data = audioop.ulaw2lin(audio_bytes, 2)
+                    # Ulaw to Lin (Custom Func)
+                    pcm_data = audioop_ulaw2lin(audio_bytes, 2)
                     wav_file.writeframes(pcm_data)
                 
                 wav_io.seek(0)
