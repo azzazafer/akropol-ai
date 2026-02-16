@@ -379,6 +379,7 @@ def voice_stream():
     response = MessagingResponse() 
     xml = f"""
     <Response>
+        <Say language="tr-TR">Bağlantı kuruluyor, lütfen bekleyin.</Say>
         <Connect>
             <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
         </Connect>
