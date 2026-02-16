@@ -8,3 +8,4 @@ flask-sock
 simple-websocket
 gevent
 gevent-websocket
+Flask-Sockets
