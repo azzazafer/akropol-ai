@@ -338,7 +338,7 @@ def voice_stream():
     print("TWILIO_REQUEST_RECEIVED")
     try:
         # 1. Get & Sanitize Inputs
-        name = request.args.get('name', 'Misafirimiz')
+        name = request.args.get('name', 'Guest')
         phone = request.args.get('phone', 'Unknown')
         
         # URL Safe for WebSocket Param
@@ -353,9 +353,10 @@ def voice_stream():
         
         # 2. RAW XML CONSTRUCTION (With Declaration)
         # Twilio requires pure XML. No whitespaces before declaration.
+        # USE ONLY ASCII CHARACTERS to Rule Out Encoding Issues
         xml_body = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say language="tr-TR">Bağlantı kuruluyor.</Say>
+    <Say>Connection starting.</Say>
     <Connect>
         <Stream url="{wss_url}" />
     </Connect>
