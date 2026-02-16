@@ -10,8 +10,9 @@ import logging
 import sqlite3
 import re
 import math
-from flask import Flask, request, jsonify, render_template, session, redirect
+from flask import Flask, request, jsonify, render_template, session, redirect, Response
 from datetime import timedelta
+import xml.sax.saxutils as saxutils
 from werkzeug.security import generate_password_hash, check_password_hash
 from twilio.rest import Client
 from openai import OpenAI
@@ -331,40 +332,46 @@ def test_call():
 @app.route("/voice-stream", methods=['GET', 'POST'])
 def voice_stream():
     """
-    TwiML endpoint using Official Twilio Library to ensure valid XML.
-    Connects call to WebSocket.
+    Manual TwiML Generation with Strict XML Headers.
+    Fixes Error 12100: Document Parse Failure.
     """
+    print("TWILIO_REQUEST_RECEIVED")
     try:
-        logging.info(f"Voice Stream Hit: {request.method}")
+        # 1. Get & Sanitize Inputs
         name = request.args.get('name', 'Misafirimiz')
         phone = request.args.get('phone', 'Unknown')
         
-        # Safe quote
-        safe_name = urllib.parse.quote(name)
+        # URL Safe for WebSocket Param
+        safe_name_url = urllib.parse.quote(name)
         
-        # FORCE WSS Protocol and Render Domain
+        # Host Logic
         render_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com")
-        host = render_url.replace("https://", "")
+        host = render_url.replace("https://", "").replace("http://", "")
         
-        # Generate Valid TwiML using VoiceResponse
-        resp = VoiceResponse()
+        # WebSocket URL
+        wss_url = f"wss://{host}/stream?name={safe_name_url}&phone={phone}"
         
-        # 1. Say Intro
-        # resp.say("Merhaba, ses kontrolü tamam. Simdi WebSocket baglantisini deniyorum...", language="tr-TR")
-        # Removing intro to go straight to AI
+        # 2. RAW XML CONSTRUCTION (With Declaration)
+        # Twilio requires pure XML. No whitespaces before declaration.
+        xml_body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say language="tr-TR">Bağlantı kuruluyor.</Say>
+    <Connect>
+        <Stream url="{wss_url}" />
+    </Connect>
+</Response>"""
         
-        # 2. Connect to Stream
-        connect = Connect()
-        stream = Stream(url=f"wss://{host}/stream?name={safe_name}&phone={phone}")
-        # Add Parameters if needed (Twilio allows specific params in Stream)
-        # stream.parameter(name="callerName", value=name)
-        connect.append(stream)
-        resp.append(connect)
+        # 3. Explicit Response
+        return Response(xml_body, mimetype='text/xml')
         
-        return str(resp), 200, {'Content-Type': 'application/xml'}
     except Exception as e:
-        logging.error(f"Voice Stream Error: {e}")
-        return str(e), 500
+        print(f"CRITICAL ERROR generating TwiML: {e}")
+        # Return a valid XML error to Twilio so it speaks it
+        err_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>System Error: {saxutils.escape(str(e))}</Say>
+</Response>"""
+        return Response(err_xml, mimetype='text/xml', status=500)
 
 @sock.route('/stream')
 def stream(ws):
