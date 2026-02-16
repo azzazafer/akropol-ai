@@ -1,3 +1,6 @@
+from gevent import monkey
+monkey.patch_all()
+
 import os
 import json
 import time
@@ -409,32 +412,37 @@ def test_call():
         """, 500
 
 # --- VOICE STREAMING (TWILIO WEBSOCKETS) ---
-@app.route("/voice-stream", methods=['POST'])
+@app.route("/voice-stream", methods=['GET', 'POST'])
 def voice_stream():
     """
     TwiML endpoint that connects the call to our WebSocket stream.
     Passes query params to the WebSocket URL.
     """
-    name = request.args.get('name', 'Misafirimiz')
-    phone = request.args.get('phone', 'Unknown')
-    
-    # Safe quote
-    safe_name = urllib.parse.quote(name)
-    
-    # FORCE WSS Protocol and Render Domain
-    render_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com")
-    host = render_url.replace("https://", "")
-    
-    response = MessagingResponse() 
-    xml = f"""
-    <Response>
-        <Say language="tr-TR">Merhaba, sesimi duyuyorsanız sistem çalışıyor demektir. Şimdi yapay zekaya bağlanıyorum.</Say>
-        <Connect>
-            <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
-        </Connect>
-    </Response>
-    """
-    return xml, 200, {'Content-Type': 'application/xml'}
+    try:
+        logging.info(f"Voice Stream Hit: {request.method}")
+        name = request.args.get('name', 'Misafirimiz')
+        phone = request.args.get('phone', 'Unknown')
+        
+        # Safe quote
+        safe_name = urllib.parse.quote(name)
+        
+        # FORCE WSS Protocol and Render Domain
+        render_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com")
+        host = render_url.replace("https://", "")
+        
+        response = MessagingResponse() 
+        xml = f"""
+        <Response>
+            <Say language="tr-TR">Merhaba, sesimi duyuyorsanız sistem çalışıyor demektir. Şimdi yapay zekaya bağlanıyorum.</Say>
+            <Connect>
+                <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
+            </Connect>
+        </Response>
+        """
+        return xml, 200, {'Content-Type': 'application/xml'}
+    except Exception as e:
+        logging.error(f"Voice Stream Error: {e}")
+        return str(e), 500
 
 @sock.route('/stream')
 def stream(ws):
