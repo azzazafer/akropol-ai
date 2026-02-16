@@ -348,10 +348,12 @@ def voice_stream():
         response = MessagingResponse() 
         xml = f"""
         <Response>
-            <Say language="tr-TR">Ses kontrolü tamam. Simdi WebSocket baglantisini deniyorum...</Say>
+            <Say language="tr-TR">Ses kontrolü. Bir, iki, üç. Sisteme bağlandınız. (WebSocket Test Modu)</Say>
+            <!--
             <Connect>
                 <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
             </Connect>
+            -->
         </Response>
         """
         return xml, 200, {'Content-Type': 'application/xml'}
@@ -520,6 +522,9 @@ def webhook():
     return str(resp)
 
 # --- ROUTES ---
+@app.route("/ws-test")
+def ws_test(): return render_template("ws_test.html")
+
 @app.route("/")
 def index(): return redirect("/dashboard")
 

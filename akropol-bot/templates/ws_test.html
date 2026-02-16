@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket Test</title>
+</head>
+
+<body style="font-family: sans-serif; padding: 20px;">
+    <h1>WebSocket Bağlantı Testi</h1>
+    <div id="status" style="padding: 10px; background: #eee;">Durum: Bekleniyor...</div>
+    <div id="log" style="margin-top: 20px; font-family: monospace;"></div>
+
+    <script>
+        var logDiv = document.getElementById('log');
+        var statusDiv = document.getElementById('status');
+
+        function log(msg) {
+            logDiv.innerHTML += msg + "<br>";
+            console.log(msg);
+        }
+
+        var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        var wsUrl = protocol + '//' + window.location.host + '/stream?name=TestUser&phone=TestPhone';
+
+        log("Bağlanılıyor: " + wsUrl);
+
+        try {
+            var ws = new WebSocket(wsUrl);
+
+            ws.onopen = function () {
+                statusDiv.innerHTML = "Durum: <span style='color:green'>BAĞLANDI! ✅</span>";
+                statusDiv.style.background = "#dff0d8";
+                log("WebSocket bağlantısı başarılı.");
+                ws.send(JSON.stringify({ event: "start", start: { streamSid: "test" } }));
+            };
+
+            ws.onmessage = function (evt) {
+                log("Mesaj alındı: " + evt.data);
+            };
+
+            ws.onclose = function () {
+                if (statusDiv.innerHTML.includes("BAĞLANDI")) {
+                    log("Bağlantı kapandı.");
+                } else {
+                    statusDiv.innerHTML = "Durum: <span style='color:red'>BAŞARISIZ ❌</span>";
+                    statusDiv.style.background = "#f2dede";
+                    log("Bağlantı kurulamadı veya reddedildi.");
+                }
+            };
+
+            ws.onerror = function (err) {
+                log("Hata: " + JSON.stringify(err));
+            };
+        } catch (e) {
+            log("Exception: " + e);
+        }
+    </script>
+</body>
+
+</html>
