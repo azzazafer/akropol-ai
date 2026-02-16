@@ -433,14 +433,10 @@ def voice_stream():
         response = MessagingResponse() 
         xml = f"""
         <Response>
-            <Say language="tr-TR">Ses kontrolü. Bir, iki, üç. Sisteme bağlandınız. Eğer bu sesi duyuyorsanız, sunucu yanıt veriyor demektir.</Say>
-            <Pause length="1"/>
-            <Say language="tr-TR">WebSocket bağlantısı şu an devre dışı bırakıldı. Sadece ses testi yapıyoruz.</Say>
-            <!-- 
+            <Say language="tr-TR">Ses kontrolü tamam. Şimdi WebSocket bağlantısını deniyorum...</Say>
             <Connect>
                 <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
             </Connect>
-            -->
         </Response>
         """
         return xml, 200, {'Content-Type': 'application/xml'}
