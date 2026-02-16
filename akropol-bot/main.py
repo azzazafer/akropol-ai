@@ -364,10 +364,15 @@ def test_call():
         stream_url = f"{public_url}/voice-stream?name={safe_name}&phone={phone}"
         
         # Determine Sender (User's Twilio Number)
-        # 1. Try Env Var
-        # 2. Fallback to the number user mentioned: 5010066718 -> +15010066718
-        sender = os.getenv("TWILIO_PHONE_NUMBER", "+15010066718")
-        if "whatsapp:" in sender: sender = sender.replace("whatsapp:", "")
+        # Use VALIDATED Twilio Number hardcoded from previous valid config
+        # +1 618 776 2828 is the one owned by the account based on logs
+        sender = "+16187762828"
+        
+        # Fallback: If user set it in env correctly, use it (but be careful) 
+        env_sender = os.getenv("TWILIO_PHONE_NUMBER", "")
+        if env_sender and "whatsapp:" not in env_sender and len(env_sender) > 8:
+             # Only use env var if it looks valid
+             sender = env_sender.replace("whatsapp:", "")
         
         call = twilio_client.calls.create(
             to=phone,
