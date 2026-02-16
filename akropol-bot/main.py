@@ -336,14 +336,15 @@ def voice_stream():
     phone = request.args.get('phone', 'Unknown')
     safe_name = urllib.parse.quote(name)
     
-    # Render handles SSL, so request.host gives domain (e.g. akropol-ai.onrender.com)
-    # We force WSS protocol
+    # CRITICAL FIX: request.host might return internal IP (0.0.0.0:8080) behind proxy.
+    # We must use the public domain explicitly.
+    host = "akropol-ai.onrender.com"
     
     # Build raw XML string to avoid SDK parsing errors
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <Stream url="wss://{request.host}/stream?name={safe_name}&phone={phone}" />
+        <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
     </Connect>
 </Response>"""
     return twiml_response, 200, {'Content-Type': 'application/xml'}
