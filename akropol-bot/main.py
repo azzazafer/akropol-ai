@@ -9,18 +9,18 @@ import threading
 import logging
 import sqlite3
 import re
-from flask import Flask, request, render_template, url_for, session, redirect, g, jsonify
+import math
+from flask import Flask, request, jsonify, render_template, session, redirect
+from datetime import timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
-from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
 from openai import OpenAI
+from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
 from flask_sock import Sock
 import urllib.parse
-# import audioop  <-- DEPRECATED IN PYTHON 3.13
 import base64
 import io
-import math
 
 # --- G.711 MU-LAW ENCODER/DECODER (Embedded for Python 3.13 Compat) ---
 BIAS = 0x84
@@ -80,241 +80,156 @@ def audioop_ratecv(fragment, width, nchannels, inrate, outrate, state):
 
 # --- KONFİGÜRASYON ---
 load_dotenv()
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-AUDIO_DIR = os.path.join(STATIC_DIR, "audio")
-DB_FILE = os.path.join(BASE_DIR, "akropol.db")
-KNOWLEDGE_BASE_FILE = os.path.join(BASE_DIR, "knowledge_base.json")
 
-# Klasörleri oluştur
-for d in [TEMPLATE_DIR, STATIC_DIR, AUDIO_DIR]:
-    if not os.path.exists(d): os.makedirs(d)
+# Admin Şifresi (Hashlenmiş) - Örnek: '123'
+ADMIN_HASH = generate_password_hash(os.getenv("ADMIN_PASSWORD", "123"))
 
+# Twilio & OpenAI
+TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "whatsapp:+14155238886") 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+twilio_client = Client(TWILIO_SID, TWILIO_TOKEN) if TWILIO_SID else None
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+# Flask & DB Setup
+app = Flask(__name__)
+sock = Sock(app)
+app.secret_key = os.urandom(24)
+app.permanent_session_lifetime = timedelta(minutes=30)
 logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
-sock = Sock(app) # WebSocket Initialization
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key_change_me")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
-ADMIN_HASH = generate_password_hash(ADMIN_PASSWORD) # Hash on startup
+DATABASE = "akropol.db"
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "whatsapp:+14155238886") 
-
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
-try: twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-except: twilio_client = None
-
-# --- DATABASE SETUP ---
 def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DB_FILE)
-        db.row_factory = sqlite3.Row
-    return db
-
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
     with app.app_context():
         db = get_db()
-        # Leads Table with Enhanced Metrics
         db.execute('''CREATE TABLE IF NOT EXISTS leads (
             phone TEXT PRIMARY KEY,
-            status TEXT DEFAULT 'NEW',
+            name TEXT,
             summary TEXT,
-            score INTEGER DEFAULT 50,
+            status TEXT, -- NEW, WARM, HOT, COLD
+            score INTEGER, -- 0-100
             churn_reason TEXT,
-            safety_mode INTEGER DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            last_interaction DATETIME
         )''')
-        # Schema Migration
-        try: db.execute("ALTER TABLE leads ADD COLUMN score INTEGER DEFAULT 50")
-        except: pass
-        try: db.execute("ALTER TABLE leads ADD COLUMN churn_reason TEXT")
-        except: pass
-        try: db.execute("ALTER TABLE leads ADD COLUMN safety_mode INTEGER DEFAULT 0")
-        except: pass
-        
-        # Messages Table
         db.execute('''CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             phone TEXT,
-            role TEXT,
+            role TEXT, -- user, assistant, system
             content TEXT,
             audio_url TEXT,
-            timestamp TEXT,
-            FOREIGN KEY(phone) REFERENCES leads(phone)
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )''')
         db.commit()
 
-# --- MIGRATION FROM JSON (ROBUST) ---
-def migrate_json_to_db(force=False):
-    with app.app_context():
-        db = get_db()
-        try:
-            # Always migrate to ensure history is present
-            json_file = os.path.join(BASE_DIR, "conversations.json")
-            if os.path.exists(json_file):
-                print(f"Starting migration... Force={force}")
-                if force:
-                    db.execute("DELETE FROM leads")
-                    db.execute("DELETE FROM messages")
-                    
-                data = json.load(open(json_file, encoding='utf-8'))
-                for phone, val in data.items():
-                        # Insert Lead
-                        meta = val.get("metadata", {})
-                        db.execute("INSERT OR IGNORE INTO leads (phone, status, summary, score) VALUES (?, ?, ?, ?)", 
-                                   (phone, meta.get("status", "NEW"), meta.get("summary", ""), 50))
-                        # Insert Messages
-                        for msg in val.get("messages", []):
-                            raw_ts = msg.get("timestamp", time.time())
-                            if isinstance(raw_ts, (int, float)):
-                                ts = datetime.datetime.fromtimestamp(raw_ts).isoformat()
-                            else:
-                                ts = str(raw_ts)
-                            db.execute("INSERT INTO messages (phone, role, content, audio_url, timestamp) VALUES (?, ?, ?, ?, ?)",
-                                       (phone, msg.get("role"), msg.get("content"), msg.get("audio_url"), ts))
-                db.commit()
-                print("Migration complete.")
-        except Exception as e:
-            print(f"Migration failed: {e}")
+init_db()
 
-# Run setup safely
-try:
-    init_db()
-    migrate_json_to_db() 
-except Exception as e:
-    print(f"DB Init Error: {e}")
-
+# --- HELPER FUNCTIONS ---
 def load_kb():
     try:
-        if os.path.exists(KNOWLEDGE_BASE_FILE):
-            with open(KNOWLEDGE_BASE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except: pass
-    return {}
+        with open("knowledge_base.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except: return {}
 
-# --- DB HELPERS ---
 def db_save_msg(phone, role, content, audio_url=None):
-    db = get_db()
-    db.execute("INSERT OR IGNORE INTO leads (phone) VALUES (?)", (phone,))
-    ts = datetime.datetime.now().isoformat()
-    db.execute("INSERT INTO messages (phone, role, content, audio_url, timestamp) VALUES (?, ?, ?, ?, ?)", 
-               (phone, role, content, audio_url, ts))
-    db.execute("UPDATE leads SET updated_at = CURRENT_TIMESTAMP WHERE phone = ?", (phone,))
-    db.commit()
+    with app.app_context():
+        db = get_db()
+        db.execute("INSERT INTO messages (phone, role, content, audio_url) VALUES (?, ?, ?, ?)", 
+                   (phone, role, content, audio_url))
+        db.commit()
 
-def db_update_lead_meta(phone, summary, score, status, churn_reason=None, safety_mode=None):
-    db = get_db()
-    query = "UPDATE leads SET summary = ?, score = ?, status = ?"
-    params = [summary, score, status]
-    
-    if churn_reason:
-        query += ", churn_reason = ?"
-        params.append(churn_reason)
-    if safety_mode is not None:
-        query += ", safety_mode = ?"
-        params.append(safety_mode)
+def db_update_lead_meta(phone, summary, score, status, churn_reason=None):
+    with app.app_context():
+        db = get_db()
+        # Ensure lead exists
+        exists = db.execute("SELECT 1 FROM leads WHERE phone = ?", (phone,)).fetchone()
+        if not exists:
+            db.execute("INSERT INTO leads (phone, last_interaction) VALUES (?, datetime('now'))", (phone,))
         
-    query += " WHERE phone = ?"
-    params.append(phone)
-    
-    db.execute(query, tuple(params))
-    db.commit()
+        db.execute("""
+            UPDATE leads 
+            SET summary = ?, score = ?, status = ?, churn_reason = ?, last_interaction = datetime('now')
+            WHERE phone = ?
+        """, (summary, score, status, churn_reason, phone))
+        db.commit()
 
-def db_set_safety_mode(phone):
-    db = get_db()
-    db.execute("UPDATE leads SET safety_mode = 1, status = 'SAFETY_PAUSED' WHERE phone = ?", (phone,))
-    db.commit()
+def migrate_json_to_db(force=False):
+    """One-time migration from json files to sqlite"""
+    if os.path.exists("conversations.json"):
+        with open("conversations.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+            for phone, msgs in data.items():
+                # Check if migrated
+                db = get_db()
+                exists = db.execute("SELECT 1 FROM leads WHERE phone = ?", (phone,)).fetchone()
+                if exists and not force: continue
+                
+                # Create Lead
+                db.execute("INSERT OR IGNORE INTO leads (phone, last_interaction) VALUES (?, datetime('now'))", (phone,))
+                
+                # Import msgs
+                for m in msgs:
+                    # Parse timestamp if complex
+                    ts = m.get("timestamp")
+                    db.execute("INSERT INTO messages (phone, role, content, audio_url, timestamp) VALUES (?, ?, ?, ?, ?)",
+                               (phone, m.get("role"), m.get("content"), m.get("audio_url"), ts))
+                db.commit()
+                print(f"Migrated {phone}")
 
-# --- TTS & SAFETY ---
-def get_hybrid_tts_url(text, duration_so_far=0):
-    """
-    Cost Optimization: Uses High Quality for hook (first 30s) or critical messages,
-    Economic for follow-ups. Since we don't have ElevenLabs key in context, 
-    we default to OpenAI 'shimmer' but structure is here.
-    """
-    try:
-        if not client: return None
-        fname = f"out_{int(time.time())}.mp3"
-        path = os.path.join(AUDIO_DIR, fname)
-        
-        # Hybrid Logic (Conceptual)
-        # if duration_so_far < 30 and ELEVENLABS_KEY:
-        #    use_eleven_labs(text)
-        # else:
-        client.audio.speech.create(model="tts-1", voice="shimmer", input=text).stream_to_file(path)
-        
-        return url_for('static', filename=f'audio/{fname}', _external=True, _scheme='https')
-    except: return None
-
-def check_safety_guard(phone, text):
-    """
-    Safety Guard: Detects keywords related to death, sickness, accidents.
-    Uses GPT-4o-mini for Intent Analysis as requested.
-    """
-    try:
-        # Quick keyword check first (optimization)
-        triggers = ["vefat", "ölüm", "kaza", "hastane", "cenaze", "başınız sağolsun", "kaybettik"]
-        text_lower = text.lower()
-        if any(t in text_lower for t in triggers):
-            # Verify intent with GPT
-            prompt = f"Analyze if this text indicates a recent death, serious illness, or tragedy requiring condolences. Respond 'YES' or 'NO'. Text: '{text}'"
-            response = client.chat.completions.create(
-                model="gpt-4o-mini", 
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
-            if "YES" in response.choices[0].message.content.upper():
-                db_set_safety_mode(phone)
-                return True
-    except Exception as e:
-        print(f"Safety Guard Error: {e}")
+# --- AI LOGIC (TEXT) ---
+def check_safety_guard(phone, user_input):
+    """If user mentions death/illness, abort sales."""
+    keywords = ["vefat", "öldü", "cenaze", "hastane", "yoğun bakım", "kanser"]
+    if any(w in user_input.lower() for w in keywords):
+        db_update_lead_meta(phone, "Vefat/Hastalık Durumu", 0, "COLD", "Safety Guard")
+        return True
     return False
 
-# --- REAL-TIME SALES LOGIC (Dynamic Rebuttal) ---
 def get_best_rebuttal(user_input, kb):
-    """
-    Latency < 10ms. Instantly detects objections and aims for the kill.
-    Uses simple keyword matching for zero-latency vs embedding search.
-    """
-    if not user_input or len(user_input) < 3: return None
+    """Simple keyword matching for objection handling."""
+    scenarios = kb.get("scenarios", [])
     user_input = user_input.lower()
-    objections = kb.get("objection_handling", {})
     
-    # 1. Price Objection
-    if any(w in user_input for w in ["pahalı", "bütçe", "fiyat", "indir", "kaç para", "çok para"]):
-        return objections.get("price_too_high")
-        
-    # 2. Distance Objection
-    if any(w in user_input for w in ["uzak", "yol", "araba", "benzin", "ulaşım", "beypazarı"]):
-        return objections.get("distance")
-        
-    # 3. Spouse/Partner Objection
-    if any(w in user_input for w in ["eşim", "hanım", "beyim", "kocam", "karım", "sorayım"]):
-        return objections.get("spouse")
-        
-    # 4. Trust Objection
-    if any(w in user_input for w in ["güven", "dolandır", "gerçek mi", "yalan", "kandır"]):
-        return objections.get("trust")
-        
+    # Priority Match
+    for scene in scenarios:
+        trigger = scene.get("trigger", "").lower()
+        if trigger and trigger in user_input:
+            return scene.get("response")
+            
     return None
 
-# --- ASYNC SPEED-TO-LEAD ---
+def get_hybrid_tts_url(text):
+    """
+    Generate audio via OpenAI TTS API (HD quality) and save to static folder.
+    Returns public URL.
+    """
+    try:
+        filename = f"tts_{int(time.time()*1000)}.mp3"
+        filepath = os.path.join("static", filename)
+        
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice="shimmer",
+            input=text
+        )
+        response.stream_to_file(filepath)
+        
+        # Public URL
+        public_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com")
+        return f"{public_url}/static/{filename}"
+    except Exception as e:
+        print(f"TTS Error: {e}")
+        return None
+
+# --- OUTBOUND CALLING TRIGGER ---
 def async_outbound_call(phone, name, delay=20):
-    """
-    Simulates asyncio background task for Speed-to-Lead.
-    Waits 'delay' seconds (default 20) then triggers a REAL VOICE CALL.
-    """
     with app.app_context():
         try:
             print(f"Speed-to-Lead Timer Started: {phone} (Delay: {delay}s)")
@@ -433,7 +348,7 @@ def voice_stream():
         response = MessagingResponse() 
         xml = f"""
         <Response>
-            <Say language="tr-TR">Ses kontrolü tamam. Şimdi WebSocket bağlantısını deniyorum...</Say>
+            <Say language="tr-TR">Ses kontrolü tamam. Simdi WebSocket baglantisini deniyorum...</Say>
             <Connect>
                 <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
             </Connect>
@@ -447,133 +362,32 @@ def voice_stream():
 @sock.route('/stream')
 def stream(ws):
     """
-    WebSocket handler for real-time audio processing (The Brain Connection).
-    STT -> Analysis -> LLM -> TTS Loop.
+    Minimal Debug Stream Handler.
+    Checks if connection can be established and maintained.
     """
-    logging.info("WebSocket Connection Accepted")
-    
-    # Get Metadata
-    name = request.args.get('name', 'Misafirimiz')
-    phone = request.args.get('phone', 'Unknown')
-    
-    stream_sid = None
-    buffer = bytearray()
-    
-    # Helper: Send TTS Audio
-    def send_tts(text):
-        if not text or not stream_sid: return
-        try:
-            logging.info(f"Aura Speaking: {text}")
-            # OpenAI TTS (pcm -> ulaw conversion)
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice="shimmer",
-                input=text,
-                response_format="pcm"
-            )
-            # Convert 24kHz PCM to 8kHz u-law (Using Custom Funcs)
-            pcm_data = response.content
-            # Resample 24000 -> 8000
-            pcm_8k, _ = audioop_ratecv(pcm_data, 2, 1, 24000, 8000, None)
-            # Lin -> Ulaw
-            ulaw_data = audioop_lin2ulaw(pcm_8k, 2)
-            # Encode
-            payload = base64.b64encode(ulaw_data).decode("utf-8")
+    logging.info("DEBUG: WebSocket Connection Attempted")
+    try:
+        while True:
+            message = ws.receive()
+            if message is None:
+                logging.info("DEBUG: WebSocket Closed by Client (None)")
+                break
             
-            msg = {
-                "event": "media",
-                "streamSid": stream_sid,
-                "media": {
-                    "payload": payload
-                }
-            }
-            ws.send(json.dumps(msg))
+            data = json.loads(message)
             
-            # Also save to DB
-            db_save_msg(phone, "assistant", text)
-            
-        except Exception as e:
-            logging.error(f"TTS Error: {e}")
-
-    # Helper: Transcribe
-    def transcribe(audio_bytes):
-        try:
-            # Create a WAV file in memory
-            import wave
-            with io.BytesIO() as wav_io:
-                with wave.open(wav_io, 'wb') as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2) # 16-bit
-                    wav_file.setframerate(8000)
-                    # Ulaw to Lin (Custom Func)
-                    pcm_data = audioop_ulaw2lin(audio_bytes, 2)
-                    wav_file.writeframes(pcm_data)
+            if data['event'] == 'start':
+                logging.info(f"DEBUG: Stream Started - ID: {data['start']['streamSid']}")
+            elif data['event'] == 'media':
+                # Just acknowledge receipt, do nothing
+                pass
+            elif data['event'] == 'stop':
+                logging.info("DEBUG: Stream Stopped")
+                break
                 
-                wav_io.seek(0)
-                wav_io.name = "audio.wav" # Important for OpenAI
-                
-                transcript = client.audio.transcriptions.create(
-                    model="whisper-1", 
-                    file=wav_io,
-                    language="tr"
-                )
-                return transcript.text
-        except Exception as e:
-            logging.error(f"STT Error: {e}")
-            return None
-
-    while True:
-        message = ws.receive()
-        if message is None: break
-        
-        data = json.loads(message)
-        if data['event'] == 'start':
-            stream_sid = data['start']['streamSid']
-            logging.info(f"Stream started: {stream_sid}")
-            
-            # THE HOOK (Scenario A: Elit Uzman - Polished)
-            time.sleep(0.5)
-            hook_text = f"Merhaba {name} Bey... (0.8s pause) ... Akropol Termal'den Aura ben. Az önceki başvurunuzu görünce sizi bekletmek istemedim. Hayalinizdeki tatil için sadece bir dakikanız var mı?"
-            send_tts(hook_text)
-            
-        elif data['event'] == 'media':
-            # Accumulate Audio
-            chunk = base64.b64decode(data['media']['payload'])
-            buffer.extend(chunk)
-            
-            # Refined Buffer Handling: 1.5 seconds (12000 bytes at 8kHz/1byte)
-            if len(buffer) > 12000:
-                text = transcribe(buffer)
-                buffer.clear() # Clear immediately
-                
-                if text and len(text) > 2: # Lower threshold slightly
-                    logging.info(f"TRANSCRIPTION DEBUG: '{text}'") # EXACT transcription log
-                    db_save_msg(phone, "user", text)
-                    
-                    # 1. Safety Guard
-                    if check_safety_guard(phone, text):
-                        send_tts("Başımız sağolsun, iyi günler dilerim.")
-                        continue
-                        
-                    # 2. Analyze Lead (Async)
-                    threading.Thread(target=analyze_lead, args=(phone, text, "...")).start()
-                    
-                    # 3. Rebuttal or LLM
-                    rebuttal = get_best_rebuttal(text, load_kb())
-                    if rebuttal:
-                        send_tts(rebuttal)
-                    else:
-                        # Generate LLM Response
-                        prompt = f"Sen Aura. Müşteri dedi ki: '{text}'. Kısa, ikna edici cevap ver. Hedef: Randevu."
-                        response = client.chat.completions.create(
-                            model="gpt-4o",
-                            messages=[{"role": "system", "content": prompt}]
-                        ).choices[0].message.content
-                        send_tts(response)
-
-        elif data['event'] == 'stop':
-            logging.info("Stream stopped")
-            break
+    except Exception as e:
+        logging.error(f"DEBUG: WebSocket Crash: {e}")
+    finally:
+        logging.info("DEBUG: WebSocket Connection Closed")
 
 # --- WEBHOOKS ---
 @app.route("/webhook-meta", methods=['POST'])
