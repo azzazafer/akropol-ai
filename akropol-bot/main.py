@@ -331,48 +331,22 @@ def test_call():
 # --- VOICE STREAMING (TWILIO WEBSOCKETS) ---
 @app.route("/voice-stream", methods=['GET', 'POST'])
 def voice_stream():
-    """
-    Manual TwiML Generation with Strict XML Headers.
-    Fixes Error 12100: Document Parse Failure.
-    """
-    print("TWILIO_REQUEST_RECEIVED")
-    try:
-        # 1. Get & Sanitize Inputs
-        name = request.args.get('name', 'Guest')
-        phone = request.args.get('phone', 'Unknown')
-        
-        # URL Safe for WebSocket Param
-        safe_name_url = urllib.parse.quote(name)
-        
-        # Host Logic
-        render_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com")
-        host = render_url.replace("https://", "").replace("http://", "")
-        
-        # WebSocket URL
-        wss_url = f"wss://{host}/stream?name={safe_name_url}&phone={phone}"
-        
-        # 2. RAW XML CONSTRUCTION (With Declaration)
-        # Twilio requires pure XML. No whitespaces before declaration.
-        # USE ONLY ASCII CHARACTERS to Rule Out Encoding Issues
-        xml_body = f"""<?xml version="1.0" encoding="UTF-8"?>
+    # Encode metadata safely
+    name = request.args.get('name', 'Misafirimiz')
+    phone = request.args.get('phone', 'Unknown')
+    safe_name = urllib.parse.quote(name)
+    
+    # Render handles SSL, so request.host gives domain (e.g. akropol-ai.onrender.com)
+    # We force WSS protocol
+    
+    # Build raw XML string to avoid SDK parsing errors
+    twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Connection starting.</Say>
     <Connect>
-        <Stream url="{wss_url}" />
+        <Stream url="wss://{request.host}/stream?name={safe_name}&phone={phone}" />
     </Connect>
 </Response>"""
-        
-        # 3. Explicit Response
-        return Response(xml_body, mimetype='text/xml')
-        
-    except Exception as e:
-        print(f"CRITICAL ERROR generating TwiML: {e}")
-        # Return a valid XML error to Twilio so it speaks it
-        err_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say>System Error: {saxutils.escape(str(e))}</Say>
-</Response>"""
-        return Response(err_xml, mimetype='text/xml', status=500)
+    return twiml_response, 200, {'Content-Type': 'application/xml'}
 
 @sock.route('/stream')
 def stream(ws):
