@@ -345,7 +345,10 @@ def voice_stream():
     # Build raw XML string to avoid SDK parsing errors
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Test Connection Success.</Say>
+    <Say>Connecting to server.</Say>
+    <Connect>
+        <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
+    </Connect>
 </Response>"""
     return twiml_response, 200, {'Content-Type': 'application/xml'}
 
