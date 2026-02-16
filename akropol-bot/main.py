@@ -461,10 +461,11 @@ def stream(ws):
                 stream_sid = data['start']['streamSid']
                 logging.info(f"Stream Started: {stream_sid}")
                 
-                # THE HOOK (Scenario A: Elit Uzman - Polished)
-                time.sleep(0.5)
-                hook_text = f"Merhaba {name} Bey... (0.8s pause) ... Akropol Termal'den Aura ben. Az önceki başvurunuzu görünce sizi bekletmek istemedim. Hayalinizdeki tatil için sadece bir dakikanız var mı?"
-                send_tts(hook_text)
+                # SILENCE TEST: Do not send TTS. Just keep connection alive.
+                # time.sleep(0.5)
+                # hook_text = f"Merhaba {name} Bey..."
+                # send_tts(hook_text)
+                logging.info("DEBUG: Start received. Waiting in silence to test stability.")
                 
             elif data['event'] == 'media':
                 # Accumulate Audio
