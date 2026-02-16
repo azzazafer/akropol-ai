@@ -239,7 +239,8 @@ def async_outbound_call(phone, name, delay=20):
             
             # TRIGGER REAL CALL
             if twilio_client:
-                public_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com") 
+                # CRITICAL FIX: Ignore env var. Force correct production URL.
+                public_url = "https://akropol-ai.onrender.com" 
                 
                 # Safer URL construction
                 safe_name = urllib.parse.quote(name)
@@ -279,7 +280,8 @@ def test_call():
         if not twilio_client:
             return "Twilio Client Init Failed! Check Account SID/Token.", 500
 
-        public_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com") 
+        # CRITICAL FIX: Ignore env var. Force correct production URL.
+        public_url = "https://akropol-ai.onrender.com" 
         safe_name = urllib.parse.quote(name)
         stream_url = f"{public_url}/voice-stream?name={safe_name}&phone={phone}"
         
