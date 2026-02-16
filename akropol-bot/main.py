@@ -16,6 +16,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from twilio.rest import Client
 from openai import OpenAI
 from twilio.twiml.messaging_response import MessagingResponse
+from twilio.twiml.voice_response import VoiceResponse, Connect, Stream, Say
 from dotenv import load_dotenv
 from flask_sock import Sock
 import urllib.parse
@@ -330,8 +331,8 @@ def test_call():
 @app.route("/voice-stream", methods=['GET', 'POST'])
 def voice_stream():
     """
-    TwiML endpoint that connects the call to our WebSocket stream.
-    Passes query params to the WebSocket URL.
+    TwiML endpoint using Official Twilio Library to ensure valid XML.
+    Connects call to WebSocket.
     """
     try:
         logging.info(f"Voice Stream Hit: {request.method}")
@@ -345,18 +346,21 @@ def voice_stream():
         render_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com")
         host = render_url.replace("https://", "")
         
-        response = MessagingResponse() 
-        xml = f"""
-        <Response>
-            <Say language="tr-TR">Ses kontrolü. Bir, iki, üç. Sisteme bağlandınız. (WebSocket Test Modu)</Say>
-            <!--
-            <Connect>
-                <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
-            </Connect>
-            -->
-        </Response>
-        """
-        return xml, 200, {'Content-Type': 'application/xml'}
+        # Generate Valid TwiML using VoiceResponse
+        resp = VoiceResponse()
+        
+        # 1. Say Intro
+        resp.say("Merhaba, ses kontrolü tamam. Simdi WebSocket baglantisini deniyorum...", language="tr-TR")
+        
+        # 2. Connect to Stream
+        connect = Connect()
+        stream = Stream(url=f"wss://{host}/stream?name={safe_name}&phone={phone}")
+        # Add Parameters if needed (Twilio allows specific params in Stream)
+        # stream.parameter(name="callerName", value=name)
+        connect.append(stream)
+        resp.append(connect)
+        
+        return str(resp), 200, {'Content-Type': 'application/xml'}
     except Exception as e:
         logging.error(f"Voice Stream Error: {e}")
         return str(e), 500
