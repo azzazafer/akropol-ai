@@ -350,7 +350,8 @@ def voice_stream():
         resp = VoiceResponse()
         
         # 1. Say Intro
-        resp.say("Merhaba, ses kontrolü tamam. Simdi WebSocket baglantisini deniyorum...", language="tr-TR")
+        # resp.say("Merhaba, ses kontrolü tamam. Simdi WebSocket baglantisini deniyorum...", language="tr-TR")
+        # Removing intro to go straight to AI
         
         # 2. Connect to Stream
         connect = Connect()
@@ -368,32 +369,147 @@ def voice_stream():
 @sock.route('/stream')
 def stream(ws):
     """
-    Minimal Debug Stream Handler.
-    Checks if connection can be established and maintained.
+    WebSocket handler for real-time audio processing (The Brain Connection).
+    STT -> Analysis -> LLM -> TTS Loop.
     """
-    logging.info("DEBUG: WebSocket Connection Attempted")
+    logging.info("WebSocket Connection Accepted")
+    
+    # Get Metadata
+    name = request.args.get('name', 'Misafirimiz')
+    phone = request.args.get('phone', 'Unknown')
+    
+    stream_sid = None
+    buffer = bytearray()
+    
+    # Helper: Send TTS Audio
+    def send_tts(text):
+        if not text or not stream_sid: return
+        try:
+            logging.info(f"Aura Speaking: {text}")
+            if not client: 
+                logging.error("OpenAI Client Not Initialized!")
+                return
+
+            # OpenAI TTS (pcm -> ulaw conversion)
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice="shimmer",
+                input=text,
+                response_format="pcm"
+            )
+            # Convert 24kHz PCM to 8kHz u-law (Using Custom Funcs)
+            pcm_data = response.content
+            # Resample 24000 -> 8000
+            pcm_8k, _ = audioop_ratecv(pcm_data, 2, 1, 24000, 8000, None)
+            # Lin -> Ulaw
+            ulaw_data = audioop_lin2ulaw(pcm_8k, 2)
+            # Encode
+            payload = base64.b64encode(ulaw_data).decode("utf-8")
+            
+            msg = {
+                "event": "media",
+                "streamSid": stream_sid,
+                "media": {
+                    "payload": payload
+                }
+            }
+            ws.send(json.dumps(msg))
+            
+            # Also save to DB
+            db_save_msg(phone, "assistant", text)
+            
+        except Exception as e:
+            logging.error(f"TTS Error: {e}")
+
+    # Helper: Transcribe
+    def transcribe(audio_bytes):
+        try:
+            if not client: return ""
+            # Create a WAV file in memory
+            import wave
+            with io.BytesIO() as wav_io:
+                with wave.open(wav_io, 'wb') as wav_file:
+                    wav_file.setnchannels(1)
+                    wav_file.setsampwidth(2) # 16-bit
+                    wav_file.setframerate(8000)
+                    # Ulaw to Lin (Custom Func)
+                    pcm_data = audioop_ulaw2lin(audio_bytes, 2)
+                    wav_file.writeframes(pcm_data)
+                
+                wav_io.seek(0)
+                wav_io.name = "audio.wav" # Important for OpenAI
+                
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1", 
+                    file=wav_io,
+                    language="tr"
+                )
+                return transcript.text
+        except Exception as e:
+            logging.error(f"STT Error: {e}")
+            return ""
+
+    # --- MAIN LOOP ---
     try:
         while True:
             message = ws.receive()
-            if message is None:
-                logging.info("DEBUG: WebSocket Closed by Client (None)")
-                break
+            if message is None: break
             
             data = json.loads(message)
             
             if data['event'] == 'start':
-                logging.info(f"DEBUG: Stream Started - ID: {data['start']['streamSid']}")
+                stream_sid = data['start']['streamSid']
+                logging.info(f"Stream Started: {stream_sid}")
+                
+                # THE HOOK (Scenario A: Elit Uzman - Polished)
+                time.sleep(0.5)
+                hook_text = f"Merhaba {name} Bey... (0.8s pause) ... Akropol Termal'den Aura ben. Az önceki başvurunuzu görünce sizi bekletmek istemedim. Hayalinizdeki tatil için sadece bir dakikanız var mı?"
+                send_tts(hook_text)
+                
             elif data['event'] == 'media':
-                # Just acknowledge receipt, do nothing
-                pass
+                # Accumulate Audio
+                chunk = base64.b64decode(data['media']['payload'])
+                buffer.extend(chunk)
+                
+                # Refined Buffer Handling: 1.5 seconds (12000 bytes at 8kHz/1byte)
+                if len(buffer) > 12000:
+                    text = transcribe(buffer)
+                    buffer.clear() # Clear immediately
+                    
+                    if text and len(text) > 2: # Lower threshold slightly
+                        logging.info(f"TRANSCRIPTION DEBUG: '{text}'") # EXACT transcription log
+                        db_save_msg(phone, "user", text)
+                        
+                        # 1. Safety Guard
+                        if check_safety_guard(phone, text):
+                            send_tts("Başımız sağolsun, iyi günler dilerim.")
+                            continue
+                            
+                        # 2. Analyze Lead (Async)
+                        threading.Thread(target=analyze_lead, args=(phone, text, "...")).start()
+                        
+                        # 3. Rebuttal or LLM
+                        rebuttal = get_best_rebuttal(text, load_kb())
+                        if rebuttal:
+                            send_tts(rebuttal)
+                        else:
+                            # Generate LLM Response
+                            if client:
+                                prompt = f"Sen Aura. Müşteri dedi ki: '{text}'. Kısa, ikna edici cevap ver. Hedef: Randevu."
+                                response = client.chat.completions.create(
+                                    model="gpt-4o",
+                                    messages=[{"role": "system", "content": prompt}]
+                                ).choices[0].message.content
+                                send_tts(response)
+                            else:
+                                send_tts("Sistemsel bir sorun var.")
+                            
             elif data['event'] == 'stop':
-                logging.info("DEBUG: Stream Stopped")
+                logging.info("Stream Stopped")
                 break
                 
     except Exception as e:
-        logging.error(f"DEBUG: WebSocket Crash: {e}")
-    finally:
-        logging.info("DEBUG: WebSocket Connection Closed")
+        logging.error(f"WebSocket Error: {e}")
 
 # --- WEBHOOKS ---
 @app.route("/webhook-meta", methods=['POST'])
@@ -421,6 +537,7 @@ def webhook_meta():
 def analyze_lead(phone, user_input, ai_reply):
     try:
         with app.app_context():
+            if not client: return
             prompt = f"""
             GÖREV: Satış Analizi ve Skorlama
             Müşteri: "{user_input}"
@@ -503,12 +620,15 @@ def webhook():
         sys_prompt += " ŞU AN TELEFONDASIN. Cevabın sesli okunacak. Noktalama işaretlerine dikkat et. Kısa konuş."
     
     try:
-        msgs = [{"role":"system", "content": sys_prompt}] + hist_msgs
-        reply = client.chat.completions.create(model="gpt-4o", messages=msgs).choices[0].message.content
-        
-        # Parallel Analysis (Scoring + Churn Detection)
-        threading.Thread(target=analyze_lead, args=(phone, user_in, reply)).start()
-        
+        if client:
+            msgs = [{"role":"system", "content": sys_prompt}] + hist_msgs
+            reply = client.chat.completions.create(model="gpt-4o", messages=msgs).choices[0].message.content
+            
+            # Parallel Analysis (Scoring + Churn Detection)
+            threading.Thread(target=analyze_lead, args=(phone, user_in, reply)).start()
+        else:
+            reply = "Client init failed"
+            
     except Exception as e:
         reply = "Hatlarimizda yogunluk var, hemen döneceğim."
         print(e)
