@@ -346,18 +346,62 @@ def async_outbound_call(phone, name, delay=20):
 @app.route("/test-call")
 def test_call():
     """
-    Manual Trigger for Testing.
-    Usage: /test-call?phone=5551234567&name=Ahmet
+    Manual Trigger for Testing (Synchronous & Debug Mode).
     """
-    phone = request.args.get("phone", "").strip().replace(" ", "")
-    name = request.args.get("name", "Misafir")
-    
-    # Auto-Format Turkish Numbers
-    if phone.startswith("0"): phone = phone[1:]
-    if not phone.startswith("+"): phone = "+90" + phone
-    
-    threading.Thread(target=async_outbound_call, args=(phone, name, 0)).start()
-    return f"Calling {phone} immediately...<br>Check your phone.", 200
+    try:
+        phone = request.args.get("phone", "").strip().replace(" ", "")
+        name = request.args.get("name", "Misafir")
+        
+        # Auto-Format Turkish Numbers
+        if phone.startswith("0"): phone = phone[1:]
+        if not phone.startswith("+"): phone = "+90" + phone
+        
+        if not twilio_client:
+            return "Twilio Client Init Failed! Check Account SID/Token.", 500
+
+        public_url = os.getenv("PUBLIC_URL", "https://akropol-ai.onrender.com") 
+        safe_name = urllib.parse.quote(name)
+        stream_url = f"{public_url}/voice-stream?name={safe_name}&phone={phone}"
+        
+        # Determine Sender (User's Twilio Number)
+        # 1. Try Env Var
+        # 2. Fallback to the number user mentioned: 5010066718 -> +15010066718
+        sender = os.getenv("TWILIO_PHONE_NUMBER", "+15010066718")
+        if "whatsapp:" in sender: sender = sender.replace("whatsapp:", "")
+        
+        call = twilio_client.calls.create(
+            to=phone,
+            from_=sender,
+            url=stream_url,
+            method="POST"
+        )
+        
+        return f"""
+        <html>
+            <body style="font-family: sans-serif; padding: 20px;">
+                <h1 style="color: green;">SUCCESS! Call Initiated.</h1>
+                <p><strong>Call SID:</strong> {call.sid}</p>
+                <p><strong>To:</strong> {phone}</p>
+                <p><strong>From:</strong> {sender}</p>
+                <p><strong>Stream URL:</strong> {stream_url}</p>
+                <p><strong>Initial Status:</strong> {call.status}</p>
+                <hr>
+                <p>Check your phone now. If it doesn't ring within 10s, check Twilio Dashboard logs.</p>
+            </body>
+        </html>
+        """, 200
+        
+    except Exception as e:
+        import traceback
+        return f"""
+        <html>
+            <body style="font-family: sans-serif; padding: 20px;">
+                <h1 style="color: red;">ERROR: Call Failed</h1>
+                <p><strong>Error Message:</strong> {str(e)}</p>
+                <pre style="background: #f0f0f0; padding: 10px;">{traceback.format_exc()}</pre>
+            </body>
+        </html>
+        """, 500
 
 # --- VOICE STREAMING (TWILIO WEBSOCKETS) ---
 @app.route("/voice-stream", methods=['POST'])
