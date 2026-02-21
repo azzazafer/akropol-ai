@@ -262,6 +262,7 @@ def ws_test(): return render_template('ws_test.html')
 
 if __name__ == "__main__":
     # Custom Server Start for Gevent + WebSockets
-    http_server = WSGIServer(('0.0.0.0', 8080), app, handler_class=WebSocketHandler)
-    logging.info("Starting WSGIServer on port 8080")
+    port = int(os.environ.get("PORT", 8080))
+    http_server = WSGIServer(('0.0.0.0', port), app, handler_class=WebSocketHandler)
+    logging.info(f"Starting WSGIServer on port {port}")
     http_server.serve_forever()
