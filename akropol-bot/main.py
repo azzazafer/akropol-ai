@@ -151,7 +151,7 @@ def get_hybrid_tts_url(text):
         filepath = os.path.join("static", filename)
         response = client.audio.speech.create(model="tts-1", voice="shimmer", input=text)
         response.stream_to_file(filepath)
-        return f"https://akropol-ai.onrender.com/static/{filename}"
+        return f"https://akropol-ai-production.up.railway.app/static/{filename}"
     except Exception as e:
         print(f"TTS Error: {e}")
         return None
@@ -162,7 +162,7 @@ def async_outbound_call(phone, name, delay=20):
         try:
             time.sleep(delay)
             if twilio_client:
-                public_url = "https://akropol-ai.onrender.com"
+                public_url = "https://akropol-ai-production.up.railway.app"
                 safe_name = urllib.parse.quote(name)
                 stream_url = f"{public_url}/voice-stream?name={safe_name}&phone={phone}"
                 twilio_client.calls.create(to=phone, from_="+16187762828", url=stream_url, method="POST")
@@ -178,7 +178,7 @@ def test_call():
         
         if not twilio_client: return "Twilio Client Init Failed!", 500
 
-        public_url = "https://akropol-ai.onrender.com"
+        public_url = "https://akropol-ai-production.up.railway.app"
         safe_name = urllib.parse.quote(name)
         stream_url = f"{public_url}/voice-stream?name={safe_name}&phone={phone}"
         
@@ -194,7 +194,7 @@ def voice_stream():
     name = request.args.get('name', 'Misafirimiz')
     phone = request.args.get('phone', 'Unknown')
     safe_name = urllib.parse.quote(name)
-    host = "akropol-ai.onrender.com"
+    host = "akropol-ai-production.up.railway.app"
     
     # RAW XML - English Only - Hardcoded Host
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
