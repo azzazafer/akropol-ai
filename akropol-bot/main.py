@@ -262,7 +262,8 @@ def ws_test(): return render_template('ws_test.html')
 
 if __name__ == "__main__":
     # Custom Server Start for Gevent + WebSockets
-    port = int(os.environ.get("PORT", 8080))
+    # HARCODED to 8080 to match Railway's Custom Networking setting
+    port = 8080
     http_server = WSGIServer(('0.0.0.0', port), app, handler_class=WebSocketHandler)
     logging.info(f"Starting WSGIServer on port {port}")
     http_server.serve_forever()
