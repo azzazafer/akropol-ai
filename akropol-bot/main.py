@@ -199,7 +199,6 @@ def voice_stream():
     # RAW XML - English Only - Hardcoded Host
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Connecting to server.</Say>
     <Connect>
         <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
     </Connect>
