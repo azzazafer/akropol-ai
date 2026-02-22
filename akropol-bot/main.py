@@ -199,7 +199,7 @@ def voice_stream():
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <Stream url="wss://{host}/stream">
+        <Stream url="wss://switchback.proxy.rlwy.net:13522/stream">
             <Parameter name="name" value="{safe_name}" />
             <Parameter name="phone" value="{phone}" />
         </Stream>
