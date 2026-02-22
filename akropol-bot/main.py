@@ -196,11 +196,13 @@ def voice_stream():
     safe_name = urllib.parse.quote(name)
     host = "akropol-ai-production.up.railway.app"
     
-    # RAW XML - English Only - Hardcoded Host
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <Stream url="wss://{host}/stream?name={safe_name}&phone={phone}" />
+        <Stream url="wss://{host}/stream">
+            <Parameter name="name" value="{safe_name}" />
+            <Parameter name="phone" value="{phone}" />
+        </Stream>
     </Connect>
 </Response>"""
     return Response(twiml_response, mimetype='text/xml')
@@ -208,12 +210,15 @@ def voice_stream():
 # --- WEBSOCKET HANDLER (FLASK-SOCKETS) ---
 @sockets.route('/stream')
 def stream(ws):
+    logging.info('WS UPGRADE RECEIVED')
     import wave
     logging.info("WS Connected")
-    phone = request.args.get('phone', 'Unknown')
-    name = request.args.get('name', 'Misafir')
     stream_sid = None
     buffer = bytearray()
+    
+    # Defaults in case not provided
+    lead_name = 'Misafir'
+    lead_phone = 'Unknown'
     
     # TTS Helper (Inner Function)
     def send_ai_response(text):
@@ -236,9 +241,15 @@ def stream(ws):
             if data['event'] == 'start':
                 stream_sid = data['start']['streamSid']
                 logging.info(f"Stream Started: {stream_sid}")
+                
+                # Fetch custom parameters
+                params = data['start'].get('customParameters', {})
+                lead_name = params.get('name', 'Misafir')
+                lead_phone = params.get('phone', 'Unknown')
+                
                 # AI INTRO
                 time.sleep(0.5)
-                send_ai_response(f"Merhaba {name} Bey, ben Aura. Nasılsınız?")
+                send_ai_response(f"Merhaba {lead_name} Bey, ben Aura. Nasılsınız?")
                 
             elif data['event'] == 'media':
                 # STT Logic (Simplified for stability)
