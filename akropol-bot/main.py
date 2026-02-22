@@ -209,6 +209,7 @@ def voice_stream():
 # --- WEBSOCKET HANDLER (FLASK-SOCKETS) ---
 @sockets.route('/stream')
 def stream(ws):
+    import wave
     logging.info("WS Connected")
     phone = request.args.get('phone', 'Unknown')
     name = request.args.get('name', 'Misafir')
@@ -245,9 +246,40 @@ def stream(ws):
                 chunk = base64.b64decode(data['media']['payload'])
                 buffer.extend(chunk)
                 if len(buffer) > 20000: # ~2.5 sec
-                    # Transcribe
-                    # (Code truncated for stability - assume STT works if we get here)
-                    buffer.clear()
+                    logging.info(f"Buffer filled: {len(buffer)} bytes. Transcribing...")
+                    try:
+                        pcm_data = audioop_ulaw2lin(buffer, 2)
+                        wav_io = io.BytesIO()
+                        with wave.open(wav_io, 'wb') as wav_file:
+                            wav_file.setnchannels(1)
+                            wav_file.setsampwidth(2)
+                            wav_file.setframerate(8000)
+                            wav_file.writeframes(pcm_data)
+                        
+                        wav_io.name = "audio.wav"
+                        wav_io.seek(0)
+                        
+                        transcript_response = client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=wav_io,
+                            language="tr"
+                        )
+                        transcript = transcript_response.text.strip()
+                        logging.info(f"USER TRANSCRIPT: {transcript}")
+                        
+                        if transcript:
+                            completion = client.chat.completions.create(
+                                model="gpt-4o-mini",
+                                messages=[
+                                    {"role": "system", "content": f"Sen Akropol Termal'ın kıdemli satış uzmanısın. Müşteri şunu dedi: [{transcript}]. Kısa, ikna edici, Türkçe cevap ver."}
+                                ]
+                            )
+                            ai_text = completion.choices[0].message.content.strip()
+                            send_ai_response(ai_text)
+                    except Exception as loop_e:
+                        logging.error(f"Audio processing error: {loop_e}")
+                    finally:
+                        buffer.clear()
                     
             elif data['event'] == 'stop': break
     except Exception as e:
