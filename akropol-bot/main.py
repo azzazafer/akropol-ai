@@ -196,12 +196,14 @@ def voice_stream():
     safe_name = urllib.parse.quote(name)
     host = "akropol-ai-production.up.railway.app"
     
+    safe_phone = phone.replace(' ', '+')
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+    <Say language="tr-TR">Bağlanıyor.</Say>
     <Connect>
         <Stream url="wss://switchback.proxy.rlwy.net:13522/stream">
             <Parameter name="name" value="{safe_name}" />
-            <Parameter name="phone" value="{phone}" />
+            <Parameter name="phone" value="{safe_phone}" />
         </Stream>
     </Connect>
 </Response>"""
